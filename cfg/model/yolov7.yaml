@@ -1,0 +1,17 @@
+# yolov7
+model:
+  backbone:
+    name: yolov7-backbone
+  neck:
+    name: yolov7-neck
+  head: yolov7-head
+
+loss_funtion: SimOTA-anchor-loss
+
+
+
+
+
+
+
+

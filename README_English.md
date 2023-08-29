@@ -1,10 +1,11 @@
 # QuuDet
 
-1.支持构建全系列yolo算法模型
+1.Support building the full range of YOLO algorithm models
 
-2.yolo组件可自由拆分组合，方便构建自定义模型
+2.YOLO components can be freely split and combined to facilitate the construction of new custom models
 
-## 环境配置
+
+## Environment Configuration
 
 
 
@@ -14,20 +15,24 @@ pip install -r requirements.txt
 
  
 
-## 网络配置
+## Network Configuration
  
-### 组件配置
- * 组件配置文件在文件夹cfg/component中,组件分为backbone、neck和head这3类。
- * 每个组件的层数都是从0层开始计算。 
- * 参数out_layer为默认指定组件输出的层数，参数activate_funtion为默认指定组件的激活函数。
- * 每一层中，第一个参数代表这一层的数据来源的层数，例如-1代表上一层，-2代表上一层的上一层，以此类推。
- * 第二个参数代表该模块重复的次数 。
- * 第三个参数为模块名称，模块的定义和实现在models/common.py中。
- * 第四个参数为模块的入参，模型运行时会自动计算模块的输入通道数，若模块的第一个入参为输入通道数，在配置文件中可省略。
+### Component Configuration
+* Component configuration files are located in the folder cfg/component, and components are divided into three categories: backbone, neck, and head.
+* The layer numbering for each component starts from 0.
+* The parameter out_layer specifies the default number of layers output by the component, and the parameter activate_function specifies the default activation function for the component.
+* In each layer, the first parameter represents the source layer for the data, e.g., -1 represents the previous layer, -2 represents the layer before the previous layer, and so on.
+* The second parameter represents the number of repetitions for the module.
+* The third parameter is the module name, with definition and implementation found in models/common.py.
+* The fourth parameter is the module's input, and the model will automatically calculate the input channel number during runtime. If the first input parameter of the module is the input channel number, it can be omitted in the configuration file.
 
  
-在backbone组件中模型逐层构建，以yolov7-tiny的backbone组件为例，模型默认的激活函数为nn.LeakyReLU(0.1)，第0层的的输出将会成为第1层的输入，
-第1层的的输出将成为第2、3层的输入，第6层的Concat模块将会将它之前的4层进行拼接，即第2到5层，最后在第14、21、28层分别输出计算结果。
+In the backbone component, the model is built layer by layer. Taking the backbone component of yolov7-tiny as an example, 
+the default activation function is nn.LeakyReLU(0.1).
+The output of layer 0 becomes the input of layer 1, 
+the output of layer 1 becomes the input of layers 2 and 3, 
+and the Concat module at layer 6 concatenates the four layers before it, i.e., layers 2 to 5. Finally, 
+the computation results are output at layers 14, 21, and 28.
 
 ```
 # yolov7-tiny-backbone
@@ -47,9 +52,9 @@ backbone:
   ]
 ```
 
-在neck组件中使用 in 来指定模型的接收输入的位置，其具体数值根据backbone的输出逆序得到，
-以yolov7-tiny-neck为例，其中第0层的 in 表示接收backbone中最后一个输出层数即28，
-第11层的 in 表示接收backbone中第2个输出层数即21。
+In the neck component, the "in" parameter is used to specify where the model receives its input.
+The specific values are obtained by reversing the output from the backbone. 
+Taking yolov7-tiny-neck as an example, the "in" value at the 0th layer indicates that it receives the output of the last layer (28) of the backbone, and the "in" value at the 11th layer indicates that it receives the output of the 2nd layer (21) of the backbone.
 
 ``` 
 # yolov7-tiny-neck
@@ -72,10 +77,13 @@ neck:
       ……
   ]
 ```
-在head组件中，仅需配置一层，运行过程中根据neck组件的out_layer自动连接，其中参数anchors默认为coco数据集产生的anchors，
-若默认anchor与当前数据集不符，程序将会自动计算新的anchor，以yolov7-head的组件为例，
-IDetect代表检测头的类型，其实现定义在models/yolo.py中，
-模块入参中的 nc 表示数据集中检测的种类，运行过程中将自动替换为当前检测种类数。
+In the head component, only one layer needs to be configured. During runtime, 
+it will automatically connect based on the "out_layer" of the neck component. 
+The parameter "anchors" is set to the default anchors generated from the COCO dataset. 
+If these anchors do not match the current dataset, the program will automatically calculate new anchors. 
+Taking the yolov7-head component as an example,"IDetect" represents the type of detection head, with its implementation defined in "models/yolo.py". 
+The "nc" parameter in the module input represents the number of detection classes in the dataset, 
+and will be automatically replaced with current actual number during runtime.
 
 ``` 
 # yolov7-head
@@ -90,15 +98,15 @@ head:
   ]
 ```
 
-### 模型配置
+### Model Configuration
  
- * 模型配置可根据cfg/component中的组件对网络进行组合，可参考cfg/model中已有配置。
- * 在backbone和neck也可配置参数out_layer和activate_funtion，head可配置参数anchors，并以此处为准。
- * 参数loss_funtion可配置所使用的计算损失的方法：
- * * 若使用anchor-base的检测头，则可配置为 "anchor-loss"或"SimOTA-anchor-loss"。
- * * 若使用anchor-free的检测头则可配置为"TalOTA-anchor-free-loss"。
+* The model configuration involves combining the components from cfg/component to form the network. PLease refer to the existing configurations in cfg/model for guidance.
+* Parameters "out_layer" and "activate_function" can also be configured for the backbone and neck components, and parameters "anchors" can also be configured in the head component. The specified values herein prevail other definitions.
+* The "loss_function" parameter can be configured to specify the method for calculating the loss:
+* * For anchor-based detection heads, it can be set to either "anchor-loss" or "SimOTA-anchor-loss".
+* * For anchor-free detection heads, it can be set to "TalOTA-anchor-free-loss".
 
-以yolov7-tiny模型为例，其中yolov7-tiny-backbone、yolov7-tiny-neck、yolov7-head组件可以替换为当前已有的组件来获得新的模型。
+Taking the yolov7-tiny model as an example, the yolov7-tiny-backbone, yolov7-tiny-neck, and yolov7-head components can be replaced with the available components to create a new model.
 ``` 
 # yolov7-tiny
 model:
@@ -121,32 +129,32 @@ loss_funtion: SimOTA-anchor-loss
 
 ```
  
-## 训练
+## Training
 
-### 数据准备 
+### Data Preparation
 
-* 数据集采用yolo格式的txt文件作为标签，标签内容分别为：
-* 类型索引，归一化的检测框中心点x,y坐标，检测框的宽高。
+* The dataset uses txt files in the YOLO format as labels, where the label content consists of:
+* Class index, normalized coordinates of the detection box center (x, y), and the width and height of the detection box.
 ```  
 1 0.683 0.611 0.586 0.244
  ```
 
-* 训练和验证的图片分别在根据train.txt和val.txt中的图片路径划分。
-* 图片的文件夹名称可为'images'或'JPEGImages'。
-* 标签的文件夹名称可为'labels'。
-* 保证图片和标签的文件名相同，并且标签的文件夹路径是基于对应图片的文件夹路径把'images'或'JPEGImages'改成了'labels'，例如：
+* The training and validation images are divied based on the image paths provided in train.txt and val.txt.
+* The image folder can be named 'images' or 'JPEGImages'.
+* The label folder should be named 'labels'.
+* Ensure that the filenames of images and labels match, and the label folder path is based on the corresponding image folder path with 'images' or 'JPEGImages' replaced by 'labels'. For example:
 ```  
-在train.txt中图片路径为
-/home/work/voc/images/train/2007_000005.jpg 
-则标签路径应该为
-/home/work/voc/labels/train/2007_000005.txt
+If the image path in train.txt is 
+"/home/work/voc/images/train/2007_000005.jpg", 
+then the label path should be 
+"/home/work/voc/labels/train/2007_000005.txt".
  ```
-### 数据配置
+### Data Configuration
 
-* 数据配置可参照data/voc.yaml进行配置。
-* 参数train和val分别为train.txt和val.txt的路径。
-* 参数nc为检测类别的数量。
-* 参数names为检测的类别名称列表。
+* The data configuration can be set according to data/voc.yaml.
+* The parameters train and val specify the paths to train.txt and val.txt, respectively.
+* The parameter nc is the number of detection classes.
+* The parameter names is a list of detection class names.
 
 ``` 
 # voc.yaml
@@ -157,68 +165,64 @@ names: ['aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', '
         'horse', 'motorbike', 'person', 'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor']
 ```
 
-### 训练配置
+### Training Configuration
 
-* 在train.py的main函数中可对默认参数进行配置。 
-* --weights为预训练模型的路径，可为空。
-* --cfg为指定网络模型配置文件所在的路径。
-* --data为数据配置文件所在的路径。
-* --epoch为训练的轮数。
-* --batch-size为训练时，每一批传入图片的数量，需按照显存大小进行设定。
-* --conf-thres为置信度阈值，过滤置信度小于该值的检测框。
-* --iou-thres为NMS的iou阈值，当两个检测框的iou大于此值时认为是同一物体，执行NMS保留置信度较高的检测框。
-* 如果要恢复前面被中断的训练，那么可以直接加上一个参数--resume。
-* 如果加载了已训练的模型，想从0 epoch开始训练，可以加参数--clear。
-* 可加参数--warm-restart，启用热重启训练策略，将训练按照epoch分为4个阶段，每个阶段减少数据增强方式。
-* 可加参数--fabric，启用混合精度加速训练。
-* 
+* In the main function of train.py, default parameters can be configured. 
+* --weights is the path to the pre-trained model, which can be left empty.
+* --cfg specifies the path to the network model configuration file.
+* --data specifies the path to the data configuration file.
+* --epoch indicates the number of training epochs.
+* --batch-size specifies the number of images per batch during training and should be adjusted based on available GPU memory.
+* --conf-thres is the confidence threshold, which filters detection boxes with a confidence score lower than this value.
+* --iou-thres is the NMS threshold for iou. When the iou of two detection frames is greater than this value, it is considered to be the same object and the detection frame with higher confidence is retained by the NMS.
+* If you want to resume the previously interrupted training, you can directly add a parameter "--resume".
+* If you load a trained model and want to start training from epoch 0, you can add a parameter --clear.
+* You can add a parameter --warm-restart to enable the warm restart training strategy, which divides the training into 4 stages according to the epoch and reduces the data augmentation methods in each stage.
+
 ``` shell
-# 可带参数运行训练命令
-python train.py  --batch-size 16 --data data/voc.yaml  --cfg cfg/custom/yolov7-tiny.yaml --conf-thres 0.25 --iou-thres 0.45 --epoch 600 --img-size 416
+# Run training command with optional parameters
+python train.py  --batch-size 8 --data data/voc.yaml  --cfg cfg/custom/yolov7-tiny.yaml
 ```
+* Training results will be saved in the folder runs/train/exp*/, containing generated models and recorded values during training.
+ 
+## Testing
+### Testing Configuration
+* In the main function of test.py, default parameters can be configured. 
+* --weights is the path to the model, which must be specified.
+* --data specifies the path to the data configuration file.
+* --conf-thres is the confidence threshold, which filters detection boxes with a confidence score lower than this value.
+* --iou-thres is the NMS threshold for iou. When the iou of two detection frames is greater than this value, it is considered to be the same object and the detection frame with higher confidence is retained by the NMS.
 
-* 训练结果将会保存在runs/train/exp*/目录下，主要包含了训练的产生的模型和训练过程中所记录的数值。
-
- ## 测试
-### 测试配置
-* 在test.py的main函数中可对默认参数进行配置。
-* --weights为模型的路径，不可为空。 
-* --data为数据配置文件所在的路径。 
-* --conf-thres为置信度阈值，过滤置信度小于该值的检测框。
-* --iou-thres为NMS的iou阈值，当两个检测框的iou大于此值时认为是同一物体，执行NMS保留置信度较高的检测框。
 ``` shell
-# 可带参数运行检测命令
+# Run testing command with optional parameters
 python test.py  --weights runs/train/exp1/weights/best.pt --data data/voc.yaml 
 ```
-* 测试完成后在控制台输出结果，包含准确率(Pression)，召回率(Recall)，平均精度(mAP)等指标，
-* 测试结果保存在runs/test/exp*/目录下。
+* Test results will be displayed in the console, including metrics such as precision, recall, and average precision (mAP).
+* Test results are also saved in the folder runs/test/exp*/.
+ ## Detection
+### Detection Configuration
+* In the main function of detect.py, default parameters can be configured. 
+* --weights is the path to the model, which must be specified.
+* --source specifies the path to the folder containing images to be detected.
+* --conf-thres is the confidence threshold, which filters detection boxes with a confidence score lower than this value.
+* --iou-thres is the NMS threshold for iou. When the iou of two detection frames is greater than this value, it is considered to be the same object and the detection frame with higher confidence is retained by the NMS.
 
-
- ## 检测 
-### 检测配置
-* 在detect.py的main函数中可对默认参数进行配置。
-* --weights为模型的路径，不可为空。 
-* --source为需要检测的图片文件所在的路径。 
-* --conf-thres为置信度阈值，过滤置信度小于该值的检测框。
-* --iou-thres为NMS的iou阈值，当两个检测框的iou大于此值时认为是同一物体，执行NMS保留置信度较高的检测框。
 ``` shell
-# 可带参数运行检测命令
-python test.py  --weights runs/train/exp1/weights/best.pt --source inference/images 
+# Run inference command with optional parameters
+python detect.py  --weights runs/train/exp1/weights/best.pt --source inference/images 
 ```
-* 检测结果保存在runs/detect/exp*/目录下。
- 
- ## 导出onnx模型
-
-### 导出配置
-* 在export.py的main函数中可对默认参数进行配置。
-* --weights为模型的路径，不可为空。  
+* Inference results will be saved in the folder runs/detect/exp*/.
+ ## Export ONNX Model
+### Export Configuration
+* In the main function of export.py, default parameters can be configured. 
+* --weights is the path to the model, which must be specified.
 ``` shell
-# 可带参数运行导出命令
+# Run export command with optional parameters
 python export.py  --weights runs/train/exp1/weights/best.pt   
 ```
-* 导出结果保存在模型的路径同级目录下。
+* The export results will be saved in the same directory level as the model path.
 
-## 参考项目
+## Reference Projects
 
 * [https://github.com/AlexeyAB/darknet](https://github.com/AlexeyAB/darknet)
 * [https://github.com/WongKinYiu/yolov7](https://github.com/WongKinYiu/yolov7)
@@ -234,7 +238,7 @@ python export.py  --weights runs/train/exp1/weights/best.pt
 * [https://github.com/ultralytics/yolov8](https://github.com/ultralytics/yolov8)
 * [https://github.com/AlanLi1997/Slim-neck-by-GSConv](https://github.com/AlanLi1997/Slim-neck-by-GSConv)
 
-## 参考文献
+## Reference Papers
 
 * [[1] Redmon, Joseph, Santosh Divvala, Ross Girshick, and Ali Farhadi. "You only look once: Unified, real-time object detection." In Proceedings of the IEEE conference on computer vision and pattern recognition, pp. 779-788. 2016.  ](https://www.cv-foundation.org/openaccess/content_cvpr_2016/html/Redmon_You_Only_Look_CVPR_2016_paper.html)
 * [[2] Redmon, Joseph, and Ali Farhadi. "YOLO9000: better, faster, stronger." In Proceedings of the IEEE conference on computer vision and pattern recognition, pp. 7263-7271. 2017.](https://openaccess.thecvf.com/content_cvpr_2017/html/Redmon_YOLO9000_Better_Faster_CVPR_2017_paper.html)
@@ -261,5 +265,4 @@ python export.py  --weights runs/train/exp1/weights/best.pt
 * [[23] DeVries, Terrance, and Graham W. Taylor. "Improved regularization of convolutional neural networks with cutout." arXiv preprint arXiv:1708.04552 (2017).](https://arxiv.org/abs/1708.04552)
 * [[24] He, Kaiming, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. "Spatial pyramid pooling in deep convolutional networks for visual recognition." IEEE transactions on pattern analysis and machine intelligence 37, no. 9 (2015): 1904-1916.](https://arxiv.org/abs/1406.4729) 
  
-
-
+ 

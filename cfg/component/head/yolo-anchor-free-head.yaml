@@ -1,0 +1,8 @@
+# yolo-anchor-free-head
+head:
+  [
+    [[in], 1, DetectAnchorFree, [nc]]
+  ]
+
+
+

@@ -1,0 +1,26 @@
+# yolov4-neck
+out_layer: [ 11,15,19 ]
+neck:
+  [ [ in, 1, SPPCSPC, [ 512 ] ], # 0
+    [ -1, 1, Conv, [ 256, 1, 1 ] ],
+    [ -1, 1, nn.Upsample, [ None, 2, 'nearest' ] ],
+    [ in, 1, Conv, [ 256, 1, 1 ] ], # route backbone P4
+    [ [ -1, -2 ], 1, Concat, [ 1 ] ],
+    [ -1, 2, BottleneckCSPB, [ 256 ] ], # 5
+    [ -1, 1, Conv, [ 128, 1, 1 ] ],
+    [ -1, 1, nn.Upsample, [ None, 2, 'nearest' ] ],
+    [ in, 1, Conv, [ 128, 1, 1 ] ], # route backbone P3
+    [ [ -1, -2 ], 1, Concat, [ 1 ] ],
+    [ -1, 2, BottleneckCSPB, [ 128 ] ], # 10
+    [ -1, 1, Conv, [ 256, 3, 1 ] ],
+    [ -2, 1, Conv, [ 256, 3, 2 ] ],
+    [ [ -1, 5 ], 1, Concat, [ 1 ] ],  # cat
+    [ -1, 2, BottleneckCSPB, [ 256 ] ], # 14
+    [ -1, 1, Conv, [ 512, 3, 1 ] ],
+    [ -2, 1, Conv, [ 512, 3, 2 ] ],
+    [ [ -1, 0 ], 1, Concat, [ 1 ] ],  # cat
+    [ -1, 2, BottleneckCSPB, [ 512 ] ], # 18
+    [ -1, 1, Conv, [ 1024, 3, 1 ] ]
+  ]
+
+

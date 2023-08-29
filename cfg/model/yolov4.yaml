@@ -1,0 +1,18 @@
+# yolov4
+model:
+  backbone:
+    name: yolov4-backbone
+    out_layer: [ 6,8,10]
+  neck:
+    name: yolov4-neck
+  head: yolo-anchor-head
+
+loss_funtion: anchor-loss
+
+
+
+
+
+
+
+

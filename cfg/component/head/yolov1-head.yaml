@@ -1,0 +1,8 @@
+# yolov1-head
+head:
+  [
+   [in, 1, YOLOv1_Detect, [nc]]
+  ]
+
+
+

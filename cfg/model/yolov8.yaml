@@ -1,0 +1,17 @@
+# yolov8
+model:
+  backbone:
+    name: yolov8-backbone
+  neck:
+    name: yolov8-neck
+  head: yolo-anchor-free-head
+
+loss_funtion: TalOTA-anchor-free-loss
+
+
+
+
+
+
+
+

@@ -1,0 +1,10 @@
+# yolov2-head
+anchors:
+  - [30,61, 62,45, 59,119]  # P4/16
+head:
+  [
+   [[in], 1, Detect, [nc, anchors]]
+  ]
+
+
+

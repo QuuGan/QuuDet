@@ -1,0 +1,17 @@
+# yolov7-tiny
+model:
+  backbone:
+    name: yolov7-tiny-backbone
+  neck:
+    name: yolov7-tiny-neck
+  head: yolov7-head
+
+loss_funtion: SimOTA-anchor-loss
+
+
+
+
+
+
+
+

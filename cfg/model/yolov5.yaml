@@ -1,0 +1,17 @@
+# yolov5
+model:
+  backbone:
+    name: yolov5-backbone
+  neck: yolov5-neck
+  head: yolo-anchor-head
+
+loss_funtion: anchor-loss
+
+
+
+
+
+
+
+
+
