@@ -2,8 +2,8 @@
 
 # QuuDet
 
-* [简体中文](https://github.com/QuuGan/QuuDet/README_Zh.md) 
-* [English](https://github.com/QuuGan/QuuDet/README.md)
+* [简体中文](https://github.com/QuuGan/QuuDet/blob/main/README_Zh.md) 
+* [English](https://github.com/QuuGan/QuuDet/blob/main/README.md)
 
 1.支持构建全系列yolo算法模型
 
