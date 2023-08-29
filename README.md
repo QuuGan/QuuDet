@@ -1,9 +1,5 @@
 
-
-# QuuDet    
-
-* [简体中文](README_Zh.md) 
-* [English](README.md)
+# QuuDet     
 
 1.Support building the full range of YOLO algorithm models
 
