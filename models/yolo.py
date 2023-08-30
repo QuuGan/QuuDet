@@ -964,9 +964,7 @@ class Model(nn.Module):
                 print('%10.1f%10.0f%10.1fms %-40s' % (o, m.np, dt[-1], m.type))
 
             x = m(x)  # run
-            y.append(x)
-            if len(y)>21:
-                a =1
+            y.append(x) 
 
               # save output
         if isinstance(self.head_out_layer,list):
