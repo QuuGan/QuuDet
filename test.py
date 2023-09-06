@@ -112,6 +112,14 @@ def test(data,
             # Run model
             t = time_synchronized()
             out, train_out = model(img, augment=augment)  # inference and training outputs
+
+            if model.no_anchor:
+                out = out.transpose(-1, -2)  # shape(1,84,6300) to shape(1,6300,84)
+                out[..., :4] = xywh2xyxy(out[..., :4])  # xywh to xyxy
+                # Find the maximum value and corresponding index on the second dimension
+                values, _ = torch.max(out[:, :, 4:], dim=2)
+                out = torch.cat((out[:, :, :4], values.unsqueeze(2), out[:, :, 4:]), dim=2)
+
             t0 += time_synchronized() - t
 
             # Compute loss
@@ -290,7 +298,7 @@ if __name__ == '__main__':
     parser.add_argument('--project', default='runs/test', help='save to project/name')
     parser.add_argument('--name', default='exp', help='save to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
-    parser.add_argument('--no-trace', action='store_true', help='don`t trace model')
+    parser.add_argument('--trace', action='store_true', help='trace model')
     parser.add_argument('--v5-metric', action='store_true', help='assume maximum recall as 1.0 in AP calculation')
     opt = parser.parse_args()
     opt.save_json |= opt.data.endswith('coco.yaml')
@@ -312,7 +320,7 @@ if __name__ == '__main__':
              save_txt=opt.save_txt | opt.save_hybrid,
              save_hybrid=opt.save_hybrid,
              save_conf=opt.save_conf,
-             trace=not opt.no_trace,
+             trace=opt.trace,
              v5_metric=opt.v5_metric
              )
 
