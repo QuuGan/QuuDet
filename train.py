@@ -175,6 +175,10 @@ def train(hyp, opt, device, tb_writer=None):
             if hasattr(v.rbr_dense, 'vector'):
                 pg0.append(v.rbr_dense.vector)
 
+    #anchor-free detect need lower lr0 than ahchor-base
+    if model.no_anchor and hyp['lr0'] >= 0.01:
+        hyp['lr0'] = hyp['lr0']/10
+
     if opt.adam:
         optimizer = optim.Adam(pg0, lr=hyp['lr0'], betas=(hyp['momentum'], 0.999))  # adjust beta1 to momentum
     else:
