@@ -142,6 +142,11 @@ def check_imshow():
 
 def check_file(file):
     # Search for file if not found
+    if not os.path.exists(file):
+        new_file = file[:-6] + file[-5:]
+        if os.path.exists(new_file):
+            return file
+
     if Path(file).is_file() or file == '':
         return file
     else:
