@@ -18,6 +18,7 @@ from utils.torch_utils import time_synchronized, fuse_conv_and_bn, model_info, s
 from utils.loss import SigmoidBin
 from utils.tal import dist2bbox, make_anchors
 from models.block import DFL, Proto
+import os
 
 try:
     import thop  # for FLOPS computation
@@ -727,11 +728,16 @@ class Model(nn.Module):
     def __init__(self, cfg , ch=3, nc=80, anchors=None,test=False):  # model, input channels, number of classes
         super(Model, self).__init__()
         self.traced = False
+        scale = None
         if isinstance(cfg, dict):
             self.yaml = cfg  # model dict
         else:  # is *.yaml
               # for torch hub
             self.yaml_file = Path(cfg).name
+
+            if not os.path.exists(cfg):
+                scale = cfg[-6]
+                cfg = cfg[:-6] + cfg[-5:]
             with open(cfg) as f:
                 self.yaml = yaml.load(f, Loader=yaml.SafeLoader)  # model dict
 
@@ -743,6 +749,10 @@ class Model(nn.Module):
 
         modle_dict = self.yaml["model"]
 
+        if scale and "scales" in modle_dict.keys():
+            scales = modle_dict["scales"]
+            scale_list = scales[scale]
+            scale={"depth": scale_list[0], "width": scale_list[1], "max_channels": scale_list[2]}
         out_layer_backbone = ""
         model_backbone_dict = modle_dict["backbone"]
         if isinstance(model_backbone_dict,str):
@@ -765,7 +775,7 @@ class Model(nn.Module):
                 act = backbone_dict['activate_funtion']
             else:
                 act = None
-            layers,self.save = build_model(layers,backbone_dict['backbone'],[ch],[],nc,[],act)
+            layers,self.save = build_model(layers,backbone_dict['backbone'],[ch],[],nc,[],act,scale)
 
             # build neck
             if "neck" in modle_dict.keys():
@@ -792,7 +802,7 @@ class Model(nn.Module):
                         act = neck_dict['activate_funtion']
                     else:
                         act = None
-                    layers, self.save = build_model(layers,neck_dict['neck'], self.save, self.backbone_out_layer[::-1], nc,[],act)
+                    layers, self.save = build_model(layers,neck_dict['neck'], self.save, self.backbone_out_layer[::-1], nc,[],act,scale)
                     #self.model += self.neck
             else:
                 self.neck_out_layer = [len(layers) - 1]
@@ -1084,7 +1094,7 @@ class Model(nn.Module):
     def info(self, verbose=False, img_size=640):  # print model information
         model_info(self, verbose, img_size)
 
-def build_model(layers,d,inch,in_layer,nc,anchors,act):  # model_dict, input_channels(3)
+def build_model(layers,d,inch,in_layer,nc,anchors,act,scales=None):  # model_dict, input_channels(3)
 
     no = -1
     in_count = 0
@@ -1093,6 +1103,8 @@ def build_model(layers,d,inch,in_layer,nc,anchors,act):  # model_dict, input_cha
     last_length = len(layers)
     for i, (f, n, m, args) in enumerate(d):  # from, number, module, args
         m = eval(m) if isinstance(m, str) else m  # eval strings
+        if scales :
+            n = n_ = max(round(n * scales["depth"]), 1) if n > 1 else n  # depth gain
 
         for j, a in enumerate(args):
             try:
@@ -1128,8 +1140,8 @@ def build_model(layers,d,inch,in_layer,nc,anchors,act):  # model_dict, input_cha
                  SwinTransformer2Block, ST2CSPA, ST2CSPB, ST2CSPC,C2f,C3,SPPCSP,VoVGSCSP,VoVGSCSPC,GSConv,CBAM,nn.ConvTranspose2d,
                  Yolov7_E_ELAN_PConv,Yolov7_E_ELAN_DCNV,SPPCSPC_ATT]:
             c1, c2 = ch[f], args[0]
-            # if c2 != no:  # if not output
-            #     c2 = make_divisible(c2, 8)
+            if scales and  c2 != nc :  # if c2 not equal to number of classes (i.e. for Classify() output)
+                c2 = make_divisible(min(c2, scales["max_channels"]) * scales["width"], 8)
 
             args = [c1, c2, *args[1:]]
             if isinstance(act,str):
@@ -1206,7 +1218,7 @@ def build_model(layers,d,inch,in_layer,nc,anchors,act):  # model_dict, input_cha
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='../cfg/model/yolov7.yaml', help='model.yaml')
+    parser.add_argument('--cfg', type=str, default='../cfg/model/yolov4m.yaml', help='model.yaml')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--profile', action='store_false', help='profile model speed')
     opt = parser.parse_args()
