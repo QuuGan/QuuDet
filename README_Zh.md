@@ -162,7 +162,7 @@ names: ['aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', '
 
 * 在train.py的main函数中可对默认参数进行配置。 
 * --weights为预训练模型的路径，可为空。
-* --cfg为指定网络模型配置文件所在的路径。
+* --cfg为指定网络模型配置文件所在的路径，可添加缩放比例，例如使用“yolov8n.yaml”将调用缩放比例为“n”的yolov8.yaml。
 * --data为数据配置文件所在的路径。
 * --epoch为训练的轮数。
 * --batch-size为训练时，每一批传入图片的数量，需按照显存大小进行设定。

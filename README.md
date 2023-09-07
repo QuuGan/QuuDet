@@ -170,7 +170,7 @@ names: ['aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', '
 
 * In the main function of train.py, default parameters can be configured. 
 * --weights is the path to the pre-trained model, which can be left empty.
-* --cfg specifies the path to the network model configuration file.
+* --cfg specifies the path to the network model configuration file, can add scale ,such as use 'yolov8n.yaml' will call yolov8.yaml with scale 'n'.
 * --data specifies the path to the data configuration file.
 * --epoch indicates the number of training epochs.
 * --batch-size specifies the number of images per batch during training and should be adjusted based on available GPU memory.
