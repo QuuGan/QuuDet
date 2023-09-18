@@ -16,7 +16,7 @@ def fitness(x):
     return (x[:, :4] * w).sum(1)
 
 
-def ap_per_class(tp, conf, pred_cls, target_cls, v5_metric=False, plot=False, save_dir='.', names=()):
+def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names=()):
     """ Compute the average precision, given the recall and precision curves.
     Source: https://github.com/rafaelpadilla/Object-Detection-Metrics.
     # Arguments
@@ -63,7 +63,7 @@ def ap_per_class(tp, conf, pred_cls, target_cls, v5_metric=False, plot=False, sa
 
             # AP from recall-precision curve
             for j in range(tp.shape[1]):
-                ap[ci, j], mpre, mrec = compute_ap(recall[:, j], precision[:, j], v5_metric=v5_metric)
+                ap[ci, j], mpre, mrec = compute_ap(recall[:, j], precision[:, j])
                 if plot and j == 0:
                     py.append(np.interp(px, mrec, mpre))  # precision at mAP@0.5
 
@@ -79,21 +79,17 @@ def ap_per_class(tp, conf, pred_cls, target_cls, v5_metric=False, plot=False, sa
     return p[:, i], r[:, i], ap, f1[:, i], unique_classes.astype('int32')
 
 
-def compute_ap(recall, precision, v5_metric=False):
+def compute_ap(recall, precision):
     """ Compute the average precision, given the recall and precision curves
     # Arguments
         recall:    The recall curve (list)
         precision: The precision curve (list)
-        v5_metric: Assume maximum recall to be 1.0, as in YOLOv5, MMDetetion etc.
     # Returns
         Average precision, precision curve, recall curve
     """
 
     # Append sentinel values to beginning and end
-    if v5_metric:  # New YOLOv5 metric, same as MMDetection and Detectron2 repositories
-        mrec = np.concatenate(([0.], recall, [1.0]))
-    else:  # Old YOLOv5 metric, i.e. default YOLOv7 metric
-        mrec = np.concatenate(([0.], recall, [recall[-1] + 0.01]))
+    mrec = np.concatenate(([0.], recall, [1.0]))
     mpre = np.concatenate(([1.], precision, [0.]))
 
     # Compute the precision envelope
