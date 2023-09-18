@@ -731,6 +731,8 @@ class Model(nn.Module):
         scale = None
         if isinstance(cfg, dict):
             self.yaml = cfg  # model dict
+            if 'scale' in self.yaml.keys():
+                scale = self.yaml['scale']
         else:  # is *.yaml
               # for torch hub
             self.yaml_file = Path(cfg).name
@@ -740,6 +742,7 @@ class Model(nn.Module):
                 cfg = cfg[:-6] + cfg[-5:]
             with open(cfg) as f:
                 self.yaml = yaml.load(f, Loader=yaml.SafeLoader)  # model dict
+                self.yaml['scale'] = scale
 
         self.model = []
         layers = []
