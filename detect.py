@@ -86,12 +86,7 @@ def detect(save_img=False):
         t1 = time_synchronized()
         with torch.no_grad():   # Calculating gradients would cause a GPU memory leak
             pred = model(img, augment=opt.augment)[0]
-            if model.no_anchor:
-                pred = pred.transpose(-1, -2)  # shape(1,84,6300) to shape(1,6300,84)
-                pred[..., :4] = xywh2xyxy(pred[..., :4])  # xywh to xyxy
-                # Find the maximum value and corresponding index on the second dimension
-                values, _ = torch.max(pred[:, :, 4:], dim=2)
-                pred = torch.cat((pred[:, :, :4], values.unsqueeze(2), pred[:, :, 4:]), dim=2)
+            
         t2 = time_synchronized()
 
         # Apply NMS
