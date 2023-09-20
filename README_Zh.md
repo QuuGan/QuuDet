@@ -175,7 +175,7 @@ names: ['aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', '
 * 
 ``` shell
 # 可带参数运行训练命令
-python train.py  --batch-size 16 --data data/voc.yaml  --cfg cfg/custom/yolov7-tiny.yaml --conf-thres 0.25 --iou-thres 0.45 --epoch 600 --img-size 416
+python train.py  --batch-size 16 --data data/voc.yaml  --cfg cfg/custom/yolov7-tiny.yaml --conf-thres 0.005 --iou-thres 0.45 --epoch 600 --img-size 416
 ```
 
 * 训练结果将会保存在runs/train/exp*/目录下，主要包含了训练的产生的模型和训练过程中所记录的数值。
