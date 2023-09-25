@@ -129,7 +129,7 @@ model:
 loss_funtion: SimOTA-anchor-loss
 
 ```
- 
+ # target detection
 ## Training
 
 ### Data Preparation
@@ -223,7 +223,83 @@ python export.py  --weights runs/train/exp1/weights/best.pt
 ```
 * The export results will be saved in the same directory level as the model path.
 
+ ## Testing ONNX models
+* Support testing ONNX models exported by both our framework and Darknet.
+
+### Testing ONNX configuration
+* --weights is the path to the model, which cannot be empty.
+* --data is the path to the model's data, which cannot be empty.
+* --darknet indicates a Darknet model.
+``` shell
+# You can run the export command with parameters
+python test_onnx.py --weights runs/train/exp1/weights/best.onnx --data data/voc.yaml
+``` 
+* The exported results will be saved in the directory under runs/test_onnx/exp*/.
+
+
+# Image Segmentation
+
+## Training
+
+### Data Preparation
+* The dataset can be created by using Labelme for annotation or by downloading datasets from the internet.
+* After annotation with Labelme, a JSON file is generated, which can be converted to label images using the tool/seg_json2png.py script.
+* ![segment_dataset_fold](docs/imgs/segment_dataset_fold.png)
+* As shown in the image, the dataset folder contains four subfolders: Test_Images, Test_Labels, Training_Images, and Training_Labels, which correspond to test images, test labels, training images, and training labels, respectively.
+* Images are in JPG format, and label files are in PNG format with 8-bit depth.
+
+### Data Configuration
+
+* Data configuration can be set in the water.yaml file, specifying the dataset path, for example: data_path: /home/work/data/citywaterCopy
+``` 
+# water.yaml
+data_path: /home/work/data/citywaterCopy
+nc: 2  # number of classes
+names: ["background", "water"]
+```
+
+### Training Configuration
+
+* --weights is the path to the pre-trained model, which can be left empty.
+* --cfg is the path to the network model configuration file, for example: "cfg/model/unet-yk.yaml".
+* --data is the path to the data configuration file, which cannot be empty, for example: "data/water.yaml".
+* --epoch is the number of training epochs.
+* --batch-size is the number of images per batch during training, which should be set according to the available GPU memory.
+
+``` shell
+# Run the training command with optional arguments
+python train_seg.py --cfg cfg/model/unet-yk-sdp.yaml --data data/water.yaml --batch-size 2
+```
+
+* The training results will be saved in the runs/train_seg/exp*/ directory, which includes the generated models and recorded metrics during training.
+
+## Testing
+### Testing Configuration
+* --weights is the path to the model, which cannot be empty.
+* --cfg is the path to the network model configuration file, for example: "cfg/model/unet-yk.yaml".
+* --data is the path to the data configuration file, which cannot be empty.
+``` shell
+# Run the training command with optional arguments
+python test_seg.py --weights runs/train_seg/exp/weights/best.pt --cfg cfg/model/unet-yk-sdp.yaml --data data/water.yaml 
+```
+* After testing, the results will be displayed in the console, including metrics such as precision, recall, and mean average precision (mAP).
+* The testing results will be saved in the runs/test_seg/exp*/ directory.
+
+## Detection
+### Detection Configuration
+* --weights is the path to the model, which cannot be empty.
+* --cfg is the path to the network model configuration file, for example: "cfg/model/unet-yk.yaml".
+* --source is the path to the images to be detected.
+``` shell
+# Run the training command with optional arguments
+python detect_seg.py  --weights runs/train_seg/exp/weights/best.pt --cfg cfg/model/unet-yk-sdp.yaml --source inference/images 
+```
+* The detection results will be saved in the runs/detect_seg/exp*/ directory.
+
+
+
 ## Reference Projects
+<details><summary> <b>Expand</b> </summary>
 
 * [https://github.com/AlexeyAB/darknet](https://github.com/AlexeyAB/darknet)
 * [https://github.com/WongKinYiu/yolov7](https://github.com/WongKinYiu/yolov7)
@@ -238,8 +314,10 @@ python export.py  --weights runs/train/exp1/weights/best.pt
 * [https://github.com/meituan/YOLOv6](https://github.com/meituan/YOLOv6)
 * [https://github.com/ultralytics/yolov8](https://github.com/ultralytics/yolov8)
 * [https://github.com/AlanLi1997/Slim-neck-by-GSConv](https://github.com/AlanLi1997/Slim-neck-by-GSConv)
+</details>
 
 ## Reference Papers
+<details><summary> <b>Expand</b> </summary>
 
 * [[1] Redmon, Joseph, Santosh Divvala, Ross Girshick, and Ali Farhadi. "You only look once: Unified, real-time object detection." In Proceedings of the IEEE conference on computer vision and pattern recognition, pp. 779-788. 2016.  ](https://www.cv-foundation.org/openaccess/content_cvpr_2016/html/Redmon_You_Only_Look_CVPR_2016_paper.html)
 * [[2] Redmon, Joseph, and Ali Farhadi. "YOLO9000: better, faster, stronger." In Proceedings of the IEEE conference on computer vision and pattern recognition, pp. 7263-7271. 2017.](https://openaccess.thecvf.com/content_cvpr_2017/html/Redmon_YOLO9000_Better_Faster_CVPR_2017_paper.html)
@@ -266,4 +344,4 @@ python export.py  --weights runs/train/exp1/weights/best.pt
 * [[23] DeVries, Terrance, and Graham W. Taylor. "Improved regularization of convolutional neural networks with cutout." arXiv preprint arXiv:1708.04552 (2017).](https://arxiv.org/abs/1708.04552)
 * [[24] He, Kaiming, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. "Spatial pyramid pooling in deep convolutional networks for visual recognition." IEEE transactions on pattern analysis and machine intelligence 37, no. 9 (2015): 1904-1916.](https://arxiv.org/abs/1406.4729) 
  
- 
+ </details>

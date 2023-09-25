@@ -1,0 +1,3 @@
+data_path: D:/Desktop/citywaterCopy
+nc: 2  # number of classes
+names: ["background", "water"]

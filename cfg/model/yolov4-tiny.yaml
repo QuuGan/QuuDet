@@ -10,7 +10,7 @@ model:
     anchors:
       - [ 6,  8,  13, 18,  21, 29 ]  # P3/8
       - [ 30, 43,  44, 61,  53, 94 ]  # P4/16
-loss_funtion: anchor-loss
+
 
 
 

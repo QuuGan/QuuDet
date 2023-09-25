@@ -13,7 +13,7 @@ model:
     name: yolov6-neck
   head: yolo-anchor-free-head
 
-loss_funtion: TalOTA-anchor-free-loss
+
 
 
 

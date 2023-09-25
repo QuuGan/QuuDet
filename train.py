@@ -27,14 +27,15 @@ from models.yolo import Model
 from utils.autoanchor import check_anchors
 from utils.datasets import create_dataloader
 from utils.general import labels_to_class_weights, increment_path, labels_to_image_weights, init_seeds, \
-     strip_optimizer, get_latest_run, check_dataset, check_file, check_git_status, check_img_size, \
+    strip_optimizer, get_latest_run, check_dataset, check_file, check_git_status, check_img_size, \
     check_requirements, print_mutation, set_logging, one_cycle, colorstr
 
-from utils.loss import ComputeLoss, ComputeLossOTA,v8DetectionLoss,ComputeLossYOLOv1
+from utils.loss import ComputeLoss, ComputeLossOTA, v8DetectionLoss, ComputeLossYOLOv1
 from utils.plots import plot_images, plot_labels, plot_results, plot_evolution
 from utils.torch_utils import ModelEMA, select_device, intersect_dicts, torch_distributed_zero_first, is_parallel
 from utils.wandb_logging.wandb_utils import WandbLogger, check_wandb_resume
 from utils.metrics import fitness
+
 logger = logging.getLogger(__name__)
 
 
@@ -43,6 +44,16 @@ def train(hyp, opt, device, tb_writer=None):
     save_dir, epochs, batch_size, total_batch_size, weights, rank, freeze = \
         Path(opt.save_dir), opt.epochs, opt.batch_size, opt.total_batch_size, opt.weights, opt.global_rank, opt.freeze
 
+    # use fabric
+    if opt.fabric:
+        from lightning.fabric import Fabric
+        if device.type == 'cpu':
+            fabric = Fabric(accelerator="cpu")
+        else:
+            fabric = Fabric(accelerator="cuda", devices=1, precision="16-mixed")
+        fabric.launch()
+        opt.image_weights = True
+
     # Directories
     wdir = save_dir / 'weights'
     wdir.mkdir(parents=True, exist_ok=True)  # make dir
@@ -50,6 +61,9 @@ def train(hyp, opt, device, tb_writer=None):
     best = wdir / 'best.pt'
     results_file = save_dir / 'results.txt'
 
+    if opt.cfg and not os.path.exists(opt.cfg):
+        scale = opt.cfg[-6]
+        opt.scale = scale
     # Save run settings
     with open(save_dir / 'hyp.yaml', 'w') as f:
         yaml.dump(hyp, f, sort_keys=False)
@@ -68,7 +82,8 @@ def train(hyp, opt, device, tb_writer=None):
     loggers = {'wandb': None}  # loggers dict
     if rank in [-1, 0]:
         opt.hyp = hyp  # add hyperparameters
-        run_id = torch.load(weights, map_location=device).get('wandb_id') if weights.endswith('.pt') and os.path.isfile(weights) else None
+        run_id = torch.load(weights, map_location=device).get('wandb_id') if weights.endswith('.pt') and os.path.isfile(
+            weights) else None
         wandb_logger = WandbLogger(opt, Path(opt.save_dir).stem, run_id, data_dict)
         loggers['wandb'] = wandb_logger.wandb
         data_dict = wandb_logger.data_dict
@@ -96,8 +111,20 @@ def train(hyp, opt, device, tb_writer=None):
     train_path = data_dict['train']
     test_path = data_dict['val']
 
+    model_teacher_path_list = opt.weights_teacher
+    model_teacher_list = []
+    if model_teacher_path_list:
+        if isinstance(model_teacher_path_list, str):
+            model_teacher_path_list = [model_teacher_path_list]
+
+        for model_teacher_path in model_teacher_path_list:
+            model_teacher = attempt_load(model_teacher_path, map_location=device)  # load FP32 model
+            model_teacher.eval()
+            model_teacher_list.append(model_teacher)
+
     # Freeze
-    freeze = [f'model.{x}.' for x in (freeze if len(freeze) > 1 else range(freeze[0]))]  # parameter names to freeze (full or partial)
+    freeze = [f'model.{x}.' for x in
+              (freeze if len(freeze) > 1 else range(freeze[0]))]  # parameter names to freeze (full or partial)
     for k, v in model.named_parameters():
         v.requires_grad = True  # train all layers
         if any(x in k for x in freeze):
@@ -175,10 +202,6 @@ def train(hyp, opt, device, tb_writer=None):
             if hasattr(v.rbr_dense, 'vector'):
                 pg0.append(v.rbr_dense.vector)
 
-    #anchor-free detect need lower lr0 than ahchor-base
-    if model.no_anchor and hyp['lr0'] >= 0.01:
-        hyp['lr0'] = hyp['lr0']/10
-
     if opt.adam:
         optimizer = optim.Adam(pg0, lr=hyp['lr0'], betas=(hyp['momentum'], 0.999))  # adjust beta1 to momentum
     else:
@@ -205,9 +228,9 @@ def train(hyp, opt, device, tb_writer=None):
     start_epoch, best_fitness = 0, 0.0
     if pretrained:
         # Optimizer
-        if ckpt['optimizer'] is not None:
-            optimizer.load_state_dict(ckpt['optimizer'])
-            best_fitness = ckpt['best_fitness']
+        # if ckpt['optimizer'] is not None:
+        #     optimizer.load_state_dict(ckpt['optimizer'])
+        #     best_fitness = ckpt['best_fitness']
 
         # EMA
         if ema and ckpt.get('ema'):
@@ -266,13 +289,14 @@ def train(hyp, opt, device, tb_writer=None):
             # cf = torch.bincount(c.long(), minlength=nc) + 1.  # frequency
             # model._initialize_biases(cf.to(device))
             if plots:
-                #plot_labels(labels, names, save_dir, loggers)
+                # plot_labels(labels, names, save_dir, loggers)
                 if tb_writer:
                     tb_writer.add_histogram('classes', c, 0)
 
             # Anchors
-            if not opt.noautoanchor and not model.no_anchor:
-                check_anchors(dataset, model=model, thr=hyp['anchor_t'], imgsz=imgsz)
+            for out_layer in model.head_out_layer:
+                if not opt.noautoanchor:
+                    check_anchors(dataset, model=model, thr=hyp['anchor_t'], imgsz=imgsz, out_layer=out_layer)
             model.half().float()  # pre-reduce anchor precision
 
     # DDP mode
@@ -282,11 +306,10 @@ def train(hyp, opt, device, tb_writer=None):
                     find_unused_parameters=any(isinstance(layer, nn.MultiheadAttention) for layer in model.modules()))
 
     # Model parameters
-    if not model.no_anchor:
-        nl = model.model[-1].nl  # number of detection layers (used for scaling hyp['obj'])
-        hyp['box'] *= 3. / nl  # scale to layers
-        hyp['cls'] *= nc / 80. * 3. / nl  # scale to classes and layers
-        hyp['obj'] *= (imgsz / 640) ** 2 * 3. / nl  # scale to image size and layers
+    nl = model.model[-1].nl  # number of detection layers (used for scaling hyp['obj'])
+    hyp['box'] *= 3. / nl  # scale to layers
+    hyp['cls'] *= nc / 80. * 3. / nl  # scale to classes and layers
+    hyp['obj'] *= (imgsz / 640) ** 2 * 3. / nl  # scale to image size and layers
     hyp['label_smoothing'] = opt.label_smoothing
     model.nc = nc  # attach number of classes to model
     model.hyp = hyp  # attach hyperparameters to model
@@ -299,18 +322,25 @@ def train(hyp, opt, device, tb_writer=None):
     nw = max(round(hyp['warmup_epochs'] * nb), 1000)  # number of warmup iterations, max(3 epochs, 1k iterations)
     # nw = min(nw, (epochs - start_epoch) / 2 * nb)  # limit warmup to < 1/2 of training
     maps = np.zeros(nc)  # mAP per class
-    results = (0, 0, 0, 0, 0, 0, 0)  # P, R, mAP@.5, mAP@.5-.95, val_loss(box, obj, cls)
+    results = (0, 0, 0, 0, 0, 0)  # P, R, mAP@.5, mAP@.5-.95
     scheduler.last_epoch = start_epoch - 1  # do not move
     scaler = amp.GradScaler(enabled=cuda)
-    if model.loss_funtion == "TalOTA-anchor-free-loss":
-        compute_loss = compute_loss_tal = v8DetectionLoss(model)
-    elif model.loss_funtion == "SimOTA-anchor-loss":
-        compute_loss_ota = ComputeLossOTA(model)  # init loss class
-        compute_loss = ComputeLoss(model)
-    elif model.loss_funtion == "yolov1-loss":
-        compute_loss = compute_loss_yolov1 = ComputeLossYOLOv1(model)  # init loss class
-    elif model.loss_funtion == "anchor-loss":
-        compute_loss = ComputeLoss(model)  # init loss class
+    compute_loss_list = []
+    for out_layer_index, out_layer in enumerate(model.head_out_layer):
+        if model.loss_funtion[out_layer_index] == "TalOTA-anchor-free-loss":
+            compute_loss = v8DetectionLoss(model, out_layer=out_layer)
+        elif model.loss_funtion[out_layer_index] == "SimOTA-anchor-loss":
+            compute_loss = ComputeLossOTA(model, out_layer=out_layer, imgsz=imgsz)  # init loss class
+
+        elif model.loss_funtion[out_layer_index] == "yolov1-loss":
+            compute_loss = ComputeLossYOLOv1(model)  # init loss class
+        else:
+            compute_loss = ComputeLoss(model, out_layer=out_layer)  # init loss class
+        compute_loss_list.append(compute_loss)
+
+    if opt.fabric:
+        model, optimizer = fabric.setup(model, optimizer)
+        dataloader = fabric.setup_dataloaders(dataloader)
 
     logger.info(f'Image sizes {imgsz} train, {imgsz_test} test\n'
                 f'Using {dataloader.num_workers} dataloader workers\n'
@@ -336,11 +366,11 @@ def train(hyp, opt, device, tb_writer=None):
 
         # Gradually reducing data augmentation methods based on epoch
         if opt.warm_restart:
-            if epoch > 0.25*epochs:
+            if epoch > 0.25 * epochs:
                 dataset.mixup = False
-            if epoch > 0.5*epochs:
+            if epoch > 0.5 * epochs:
                 dataset.mosaic = False
-            if epoch > 0.75*epochs:
+            if epoch > 0.75 * epochs:
                 dataset.augment_affine = False
                 dataset.augment_hsv = False
 
@@ -359,6 +389,37 @@ def train(hyp, opt, device, tb_writer=None):
         for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device, non_blocking=True).float() / 255.0  # uint8 to float32, 0-255 to 0.0-1.0
+            targets_list = []
+            if len(model_teacher_list) > 0:
+                for model_teacher in model_teacher_list:
+                    out = model_teacher(imgs)
+                    if isinstance(out, list):
+                        out_list = []
+                        for out_item in out:
+                            out_list.append(out_item[0])
+                        out = torch.cat(out_list, dim=1)
+                    else:
+                        out = out[0]
+                    nc = out.shape[2] - 5
+                    xc = out[..., 4] > opt.conf_thres
+                    new_targets = None
+                    for xi, x in enumerate(out):  # image index, image inference
+                        x = x[xc[xi]]  # confidence
+                        if nc == 1:
+                            x[:, 5:] = x[:, 4:5]  # for models with one class, cls_loss is 0 and cls_conf is always 0.5,
+                            # so there is no need to multiplicate.
+                        else:
+                            x[:, 5:] *= x[:, 4:5]  # conf = obj_conf * cls_conf
+                        conf, j = x[:, 5:].max(1, keepdim=True)
+                        box = x[:, :4]
+                        x = torch.cat((box, conf, j.float()), 1)[conf.view(-1) > opt.conf_thres]
+                        if new_targets == None:
+                            new_targets = x
+                        else:
+                            new_targets = torch.cat((new_targets, x), dim=0)
+                    targets_list.append(new_targets)
+            else:
+                targets_list = [targets]
 
             # Warmup
             if ni <= nw:
@@ -382,21 +443,32 @@ def train(hyp, opt, device, tb_writer=None):
             # Forward
             with amp.autocast(enabled=cuda):
                 pred = model(imgs)  # forward
-                if model.loss_funtion == "TalOTA-anchor-free-loss":
-                    loss, loss_items = compute_loss_tal(pred,targets.to(device))
-                elif model.loss_funtion == "SimOTA-anchor-loss":
-                    loss, loss_items = compute_loss_ota(pred, targets.to(device), imgs)  # loss scaled by batch_size
-                elif model.loss_funtion == "yolov1-loss":
-                    loss, loss_items = compute_loss_yolov1(pred, targets.to(device))
-                elif model.loss_funtion ==  "anchor-loss":
-                    loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
+                loss = None
+                loss_items_list = []
+                if len(targets_list) != len(model.head_out_layer):
+                    all_target = torch.cat(targets_list, dim=0)
+                    targets_list = [all_target for _ in range(len(model.head_out_layer))]
+
+                for out_layer_index, out_layer in enumerate(model.head_out_layer):
+                    target = targets_list[out_layer_index]
+                    loss_cal, loss_items = compute_loss_list[out_layer_index](pred[out_layer_index], target.to(device))
+                    if loss == None:
+                        loss = loss_cal
+                    else:
+                        loss = loss + loss_cal
+                    loss_items_list.append(loss_items)
+
                 if rank != -1:
                     loss *= opt.world_size  # gradient averaged between devices in DDP mode
                 if opt.quad:
                     loss *= 4.
 
             # Backward
-            scaler.scale(loss).backward()
+            if opt.fabric:
+                fabric.backward(scaler.scale(loss))
+            else:
+                scaler.scale(loss).backward()
+
             # Optimize
             if ni % accumulate == 0:
                 scaler.step(optimizer)  # optimizer.step
@@ -407,11 +479,12 @@ def train(hyp, opt, device, tb_writer=None):
 
             # Print
             if rank in [-1, 0]:
-                mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
-                mem = '%.3gG' % (torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0)  # (GB)
-                s = ('%10s' * 2 + '%10.4g' * 6) % (
-                    '%g/%g' % (epoch, epochs - 1), mem, *mloss, targets.shape[0], imgs.shape[-1])
-                pbar.set_description(s)
+                for loss_items in loss_items_list:
+                    mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
+                    mem = '%.3gG' % (torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0)  # (GB)
+                    s = ('%10s' * 2 + '%10.4g' * 6) % (
+                        '%g/%g' % (epoch, epochs - 1), mem, *mloss, targets.shape[0], imgs.shape[-1])
+                    pbar.set_description(s)
 
                 # Plot
                 if plots and ni < 10:
@@ -450,12 +523,11 @@ def train(hyp, opt, device, tb_writer=None):
                                                  verbose=nc < 50 and final_epoch,
                                                  plots=plots and final_epoch,
                                                  wandb_logger=wandb_logger,
-                                                 compute_loss=compute_loss,
                                                  is_coco=is_coco)
 
             # Write
             with open(results_file, 'a') as f:
-                f.write(s + '%10.4g' * 7 % results + '\n')  # append metrics, val_loss
+                f.write(s + '%10.4g' * 4 % results + '\n')  # append metrics, val_loss
             if len(opt.name) and opt.bucket:
                 os.system('gsutil cp %s gs://%s/results/results%s.txt' % (results_file, opt.bucket, opt.name))
 
@@ -491,14 +563,15 @@ def train(hyp, opt, device, tb_writer=None):
                 torch.save(ckpt, last)
                 if best_fitness == fi:
                     torch.save(ckpt, best)
-                if (best_fitness == fi) and (epoch >= 200):
-                    torch.save(ckpt, wdir / 'best_{:03d}.pt'.format(epoch))
-                if epoch == 0:
-                    torch.save(ckpt, wdir / 'epoch_{:03d}.pt'.format(epoch))
-                elif ((epoch+1) % 25) == 0:
-                    torch.save(ckpt, wdir / 'epoch_{:03d}.pt'.format(epoch))
-                elif epoch >= (epochs-5):
-                    torch.save(ckpt, wdir / 'epoch_{:03d}.pt'.format(epoch))
+                if not opt.nosave_epoch:
+                    if (best_fitness == fi) and (epoch >= 200):
+                        torch.save(ckpt, wdir / 'best_{:03d}.pt'.format(epoch))
+                    if epoch == 0:
+                        torch.save(ckpt, wdir / 'epoch_{:03d}.pt'.format(epoch))
+                    elif ((epoch + 1) % 25) == 0:
+                        torch.save(ckpt, wdir / 'epoch_{:03d}.pt'.format(epoch))
+                    elif epoch >= (epochs - 5):
+                        torch.save(ckpt, wdir / 'epoch_{:03d}.pt'.format(epoch))
                 if wandb_logger.wandb:
                     if ((epoch + 1) % opt.save_period == 0 and not final_epoch) and opt.save_period != -1:
                         wandb_logger.log_model(
@@ -550,10 +623,11 @@ def train(hyp, opt, device, tb_writer=None):
     return results
 
 
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', type=str, default='', help='initial weights path')
+    parser.add_argument('--weights-teacher', type=str, default='',
+                        help='teacher weights path for knowledge distillation')
     parser.add_argument('--cfg', type=str, default='', help='model.yaml path')
     parser.add_argument('--data', type=str, default='', help='data.yaml path')
     parser.add_argument('--hyp', type=str, default='data/hyp.yaml', help='hyperparameters path')
@@ -564,8 +638,11 @@ if __name__ == '__main__':
     parser.add_argument('--iou-thres', type=float, default=0.5, help='IOU threshold for NMS')
     parser.add_argument('--rect', action='store_true', help='rectangular training')
     parser.add_argument('--resume', nargs='?', const=True, default=False, help='resume most recent training')
-    parser.add_argument('--warm-restart', action='store_false', help='gradually reducing data augmentation methods based on epoch in four stages')
+    parser.add_argument('--warm-restart', action='store_true',
+                        help='gradually reducing data augmentation methods based on epoch in four stages')
+    parser.add_argument('--fabric', action='store_true', help='Enable fabric to accelerate training')
     parser.add_argument('--clear', action='store_true', help='start train from 0 epoch')
+    parser.add_argument('--nosave-epoch', action='store_true', help='only save best and last')
     parser.add_argument('--nosave', action='store_true', help='only save final checkpoint')
     parser.add_argument('--notest', action='store_true', help='only test final epoch')
     parser.add_argument('--noautoanchor', action='store_true', help='disable autoanchor check')
@@ -591,15 +668,15 @@ if __name__ == '__main__':
     parser.add_argument('--bbox_interval', type=int, default=-1, help='Set bounding-box image logging interval for W&B')
     parser.add_argument('--save_period', type=int, default=-1, help='Log model after every "save_period" epoch')
     parser.add_argument('--artifact_alias', type=str, default="latest", help='version of dataset artifact to be used')
-    parser.add_argument('--freeze', nargs='+', type=int, default=[0], help='Freeze layers: backbone of yolov7=50, first3=0 1 2')
-
+    parser.add_argument('--freeze', nargs='+', type=int, default=[0],
+                        help='Freeze layers: backbone, first3=0 1 2')
     opt = parser.parse_args()
 
     # Set DDP variables
     opt.world_size = int(os.environ['WORLD_SIZE']) if 'WORLD_SIZE' in os.environ else 1
     opt.global_rank = int(os.environ['RANK']) if 'RANK' in os.environ else -1
     set_logging(opt.global_rank)
-    #if opt.global_rank in [-1, 0]:
+    # if opt.global_rank in [-1, 0]:
     #    check_git_status()
     #    check_requirements()
 
@@ -676,15 +753,15 @@ if __name__ == '__main__':
                 'flipud': (1, 0.0, 1.0),  # image flip up-down (probability)
                 'fliplr': (0, 0.0, 1.0),  # image flip left-right (probability)
                 'mosaic': (1, 0.0, 1.0),  # image mixup (probability)
-                'mixup': (1, 0.0, 1.0),   # image mixup (probability)
+                'mixup': (1, 0.0, 1.0),  # image mixup (probability)
                 'copy_paste': (1, 0.0, 1.0),  # segment copy-paste (probability)
-                'paste_in': (1, 0.0, 1.0)}    # segment copy-paste (probability)
-        
+                'paste_in': (1, 0.0, 1.0)}  # segment copy-paste (probability)
+
         with open(opt.hyp, errors='ignore') as f:
             hyp = yaml.safe_load(f)  # load hyps dict
             if 'anchors' not in hyp:  # anchors commented in hyp.yaml
                 hyp['anchors'] = 3
-                
+
         assert opt.local_rank == -1, 'DDP mode not implemented for --evolve'
         opt.notest, opt.nosave = True, True  # only test/save final epoch
         # ei = [isinstance(x, (int, float)) for x in hyp.values()]  # evolvable indices

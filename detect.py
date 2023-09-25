@@ -9,8 +9,8 @@ from numpy import random
 
 from models.experimental import attempt_load
 from utils.datasets import LoadStreams, LoadImages
-from utils.general import check_img_size, check_requirements, check_imshow, non_max_suppression, apply_classifier, \
-    scale_coords, xyxy2xywh,xywh2xyxy, strip_optimizer, set_logging, increment_path
+from utils.general import check_img_size, check_imshow, non_max_suppression, apply_classifier, \
+    scale_coords, xyxy2xywh, set_logging, increment_path
 from utils.plots import plot_one_box
 from utils.torch_utils import select_device, load_classifier, time_synchronized, TracedModel
 
@@ -85,26 +85,27 @@ def detect(save_img=False):
         # Inference
         t1 = time_synchronized()
         with torch.no_grad():   # Calculating gradients would cause a GPU memory leak
-            pred = model(img, augment=opt.augment)[0]
-            if model.no_anchor:
-                pred = pred.transpose(-1, -2)  # shape(1,84,6300) to shape(1,6300,84)
-                pred[..., :4] = xywh2xyxy(pred[..., :4])  # xywh to xyxy
-                # Find the maximum value and corresponding index on the second dimension
-                values, _ = torch.max(pred[:, :, 4:], dim=2)
-                pred = torch.cat((pred[:, :, :4], values.unsqueeze(2), pred[:, :, 4:]), dim=2)
-            
+            out = model(img, augment=opt.augment)[0]
+            if isinstance(out, list):
+                out_list = []
+                for out_item in out:
+                    out_list.append(out_item[0])
+                out = torch.cat(out_list, dim=1)
+            else:
+                out = out[0]
+
         t2 = time_synchronized()
 
         # Apply NMS
-        pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
+        out = non_max_suppression(out, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
         t3 = time_synchronized()
 
         # Apply Classifier
         if classify:
-            pred = apply_classifier(pred, modelc, img, im0s)
+            out = apply_classifier(out, modelc, img, im0s)
 
         # Process detections
-        for i, det in enumerate(pred):  # detections per image
+        for i, det in enumerate(out):  # detections per image
             if webcam:  # batch_size >= 1
                 p, s, im0, frame = path[i], '%g: ' % i, im0s[i].copy(), dataset.count
             else:
@@ -185,7 +186,6 @@ if __name__ == '__main__':
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3')
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--augment', action='store_true', help='augmented inference')
-    parser.add_argument('--update', action='store_true', help='update all models')
     parser.add_argument('--project', default='runs/detect', help='save results to project/name')
     parser.add_argument('--name', default='exp', help='save results to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
@@ -195,9 +195,4 @@ if __name__ == '__main__':
     #check_requirements(exclude=('pycocotools', 'thop'))
 
     with torch.no_grad():
-        if opt.update:  # update all models (to fix SourceChangeWarning)
-            for opt.weights in ['yolov7.pt']:
-                detect()
-                strip_optimizer(opt.weights)
-        else:
-            detect()
+        detect()

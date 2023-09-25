@@ -3,6 +3,6 @@ head:
   [
     [[in], 1, DetectAnchorFree, [nc]]
   ]
-
+loss_funtion: TalOTA-anchor-free-loss
 
 

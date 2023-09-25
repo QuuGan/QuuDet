@@ -8,6 +8,6 @@ head:
   [
    [[in], 1, Detect, [nc, anchors]]
   ]
-
+loss_funtion: anchor-loss
 
 

@@ -121,7 +121,8 @@ model:
 loss_funtion: SimOTA-anchor-loss
 
 ```
- 
+# 目标检测
+
 ## 训练
 
 ### 数据准备 
@@ -160,10 +161,9 @@ names: ['aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', '
 
 ### 训练配置
 
-* 在train.py的main函数中可对默认参数进行配置。 
 * --weights为预训练模型的路径，可为空。
 * --cfg为指定网络模型配置文件所在的路径，可添加缩放比例，例如使用“yolov8n.yaml”将调用缩放比例为“n”的yolov8.yaml。
-* --data为数据配置文件所在的路径。
+* --data为数据配置文件所在的路径，不可为空。 
 * --epoch为训练的轮数。
 * --batch-size为训练时，每一批传入图片的数量，需按照显存大小进行设定。
 * --conf-thres为置信度阈值，过滤置信度小于该值的检测框。
@@ -175,16 +175,15 @@ names: ['aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', '
 * 
 ``` shell
 # 可带参数运行训练命令
-python train.py  --batch-size 16 --data data/voc.yaml  --cfg cfg/custom/yolov7-tiny.yaml --conf-thres 0.005 --iou-thres 0.45 --epoch 600 --img-size 416
+python train.py  --batch-size 16 --data data/voc.yaml  --cfg cfg/custom/yolov7-tiny.yaml 
 ```
 
 * 训练结果将会保存在runs/train/exp*/目录下，主要包含了训练的产生的模型和训练过程中所记录的数值。
 
  ## 测试
 ### 测试配置
-* 在test.py的main函数中可对默认参数进行配置。
 * --weights为模型的路径，不可为空。 
-* --data为数据配置文件所在的路径。 
+* --data为数据配置文件所在的路径，不可为空。 
 * --conf-thres为置信度阈值，过滤置信度小于该值的检测框。
 * --iou-thres为NMS的iou阈值，当两个检测框的iou大于此值时认为是同一物体，执行NMS保留置信度较高的检测框。
 ``` shell
@@ -197,7 +196,6 @@ python test.py  --weights runs/train/exp1/weights/best.pt --data data/voc.yaml
 
  ## 检测 
 ### 检测配置
-* 在detect.py的main函数中可对默认参数进行配置。
 * --weights为模型的路径，不可为空。 
 * --source为需要检测的图片文件所在的路径。 
 * --conf-thres为置信度阈值，过滤置信度小于该值的检测框。
@@ -211,7 +209,6 @@ python test.py  --weights runs/train/exp1/weights/best.pt --source inference/ima
  ## 导出onnx模型
 
 ### 导出配置
-* 在export.py的main函数中可对默认参数进行配置。
 * --weights为模型的路径，不可为空。  
 ``` shell
 # 可带参数运行导出命令
@@ -219,7 +216,83 @@ python export.py  --weights runs/train/exp1/weights/best.pt
 ```
 * 导出结果保存在模型的路径同级目录下。
 
+ ## 测试onnx模型
+支持本框架导出的onnx模型，以及darknet的onnx模型
+### 测试onnx配置
+* --weights为模型的路径，不可为空。  
+* --data为模型的路径，不可为空。 
+* --darknet表示darknet的模型
+``` shell
+# 可带参数运行导出命令
+python test_onnx.py  --weights runs/train/exp1/weights/best.onnx --data data/voc.yaml
+```
+* 导出结果保存在runs/test_onnx/exp*/目录下。
+
+
+# 图像分割
+
+## 训练
+
+### 数据准备 
+* 数据集可采用自己使用Labelme标记，或网络上下载他人数据集。
+* Labelme标记后会生成json文件，通过tool/seg_ json2png.py可转为标签图片   
+* ![segmet_dataset_fold](docs/imgs/segment_dataset_fold.png)
+* 如图所示数据集文件夹内包含4个文件夹Test_Images、Test_Labels、Training_Images、Training_Labels分别是测试图片、测试标签、训练图片、训练标签。 
+* 图片同一采用JPG格式，标签文件同一采用PNG格式（位深度8位）
+
+
+### 数据配置
+
+* 数据配置可参照water.yaml中输入数据集地址如：data_path: /home/work/data/citywaterCopy
+``` 
+# water.yaml
+data_path: /home/work/data/citywaterCopy
+nc: 2  # number of classes
+names: ["background", "water"]
+```
+
+### 训练配置
+
+* --weights为预训练模型的路径，可为空。
+* --cfg为指定网络模型配置文件所在的路径，例如使用“cfg/model/unet-yk.yaml“。
+* --data为数据配置文件所在的路径，不可为空，例如”data/water.yaml“。 
+* --epoch为训练的轮数。
+* --batch-size为训练时，每一批传入图片的数量，需按照显存大小进行设定。
+ 
+* 
+``` shell
+# 可带参数运行训练命令
+python train_seg.py --cfg cfg/model/unet-yk-sdp.yaml --data data/water.yaml --batch-size 2
+```
+
+* 训练结果将会保存在runs/train_seg/exp*/目录下，主要包含了训练的产生的模型和训练过程中所记录的数值。
+
+ ## 测试
+### 测试配置
+* --weights为模型的路径，不可为空。 
+* --data为数据配置文件所在的路径，不可为空。  
+``` shell
+# 可带参数运行检测命令
+python test_seg.py --weights runs/train_seg/exp/weights/best.pt --cfg cfg/model/unet-yk-sdp.yaml --data data/water.yaml 
+```
+* 测试完成后在控制台输出结果，包含准确率(Pression)，召回率(Recall)，平均精度(mAP)等指标，
+* 测试结果保存在runs/test_seg/exp*/目录下。
+
+
+ ## 检测 
+### 检测配置
+* --weights为模型的路径，不可为空。 
+* * --cfg为指定网络模型配置文件所在的路径，例如使用“cfg/model/unet-yk.yaml“。
+* --source为需要检测的图片文件所在的路径。  
+``` shell
+# 可带参数运行检测命令
+python detect_seg.py  --weights runs/train_seg/exp/weights/best.pt --cfg cfg/model/unet-yk-sdp.yaml --source inference/images 
+```
+* 检测结果保存在runs/detect_seg/exp*/目录下。
+
+
 ## 参考项目
+<details><summary> <b>展开</b> </summary>
 
 * [https://github.com/AlexeyAB/darknet](https://github.com/AlexeyAB/darknet)
 * [https://github.com/WongKinYiu/yolov7](https://github.com/WongKinYiu/yolov7)
@@ -234,8 +307,10 @@ python export.py  --weights runs/train/exp1/weights/best.pt
 * [https://github.com/meituan/YOLOv6](https://github.com/meituan/YOLOv6)
 * [https://github.com/ultralytics/yolov8](https://github.com/ultralytics/yolov8)
 * [https://github.com/AlanLi1997/Slim-neck-by-GSConv](https://github.com/AlanLi1997/Slim-neck-by-GSConv)
+</details>
 
 ## 参考文献
+<details><summary> <b>展开</b> </summary>
 
 * [[1] Redmon, Joseph, Santosh Divvala, Ross Girshick, and Ali Farhadi. "You only look once: Unified, real-time object detection." In Proceedings of the IEEE conference on computer vision and pattern recognition, pp. 779-788. 2016.  ](https://www.cv-foundation.org/openaccess/content_cvpr_2016/html/Redmon_You_Only_Look_CVPR_2016_paper.html)
 * [[2] Redmon, Joseph, and Ali Farhadi. "YOLO9000: better, faster, stronger." In Proceedings of the IEEE conference on computer vision and pattern recognition, pp. 7263-7271. 2017.](https://openaccess.thecvf.com/content_cvpr_2017/html/Redmon_YOLO9000_Better_Faster_CVPR_2017_paper.html)
@@ -261,6 +336,6 @@ python export.py  --weights runs/train/exp1/weights/best.pt
 * [[22] Lin, Tsung-Yi, Priya Goyal, Ross Girshick, Kaiming He, and Piotr Dollár. "Focal loss for dense object detection." In Proceedings of the IEEE international conference on computer vision, pp. 2980-2988. 2017.](https://arxiv.org/abs/1708.02002)
 * [[23] DeVries, Terrance, and Graham W. Taylor. "Improved regularization of convolutional neural networks with cutout." arXiv preprint arXiv:1708.04552 (2017).](https://arxiv.org/abs/1708.04552)
 * [[24] He, Kaiming, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. "Spatial pyramid pooling in deep convolutional networks for visual recognition." IEEE transactions on pattern analysis and machine intelligence 37, no. 9 (2015): 1904-1916.](https://arxiv.org/abs/1406.4729) 
- 
+ </details>
 
 

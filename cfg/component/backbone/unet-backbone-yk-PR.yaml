@@ -1,0 +1,15 @@
+# unet-backbone
+out_layer: [0,1,2,3,4]
+backbone:
+  # [from, number, module, args]
+  [[-1, 1, DoubleIncConv, [64,True]],  # 0
+   [-1, 1, Down, [128,True]],  # 1
+   [-1, 1, Down, [256,True]],  # 2
+   [-1, 1, Down, [512,True]],  # 3
+   [-1, 1, Down, [512,True]]  # 4
+  ]
+
+
+
+
+

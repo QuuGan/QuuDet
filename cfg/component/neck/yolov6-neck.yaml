@@ -1,5 +1,6 @@
 # yolov6-neck
 out_layer: [9,13,17]
+activate_funtion: nn.ReLU()
 neck:
   [[in, 1, Conv, [256, 1, 1]],
    [-1, 1, nn.ConvTranspose2d, [256, 2, 2, 0]],

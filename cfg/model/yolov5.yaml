@@ -12,7 +12,7 @@ model:
   neck: yolov5-neck
   head: yolo-anchor-head
 
-loss_funtion: anchor-loss
+
 
 
 

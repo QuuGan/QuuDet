@@ -9,5 +9,6 @@ head:
     [[in], 1, IDetect, [nc, anchors]]
   ]
 
+loss_funtion: SimOTA-anchor-loss
 
 

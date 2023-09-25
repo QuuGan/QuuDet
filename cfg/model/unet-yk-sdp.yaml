@@ -1,0 +1,15 @@
+model:
+  backbone: unet-backbone-yk-PR
+  neck: unet-neck-yk-SP
+  head: unet-head
+
+loss_funtion: unet-loss-SoftDice
+
+
+
+
+
+
+
+
+

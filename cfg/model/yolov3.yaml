@@ -8,7 +8,7 @@ model:
     out_layer: [ 4,11,16 ]
   head: yolo-anchor-head
 
-loss_funtion: anchor-loss
+
 
 
 

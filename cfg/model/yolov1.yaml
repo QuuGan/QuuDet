@@ -5,7 +5,7 @@ model:
     out_layer: [ 27 ]
   head: yolov1-head
 
-loss_funtion: yolov1-loss
+
 
 
 

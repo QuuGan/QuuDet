@@ -22,7 +22,7 @@ def test(data,
          weights=None,
          batch_size=32,
          imgsz=640,
-         conf_thres=0.25,
+         conf_thres=0.001,
          iou_thres=0.6,  # for NMS
          save_json=False,
          single_cls=False,
@@ -36,28 +36,32 @@ def test(data,
          save_conf=False,  # save auto-label confidences
          plots=True,
          wandb_logger=None,
-         compute_loss=None,
          half_precision=True,
          trace=False,
          is_coco=False):
     # Initialize/load model and set device
     training = model is not None
+    txt_result = []
     if training:  # called by train.py
         device = next(model.parameters()).device  # get model device
 
     else:  # called directly
         set_logging()
         device = select_device(opt.device, batch_size=batch_size)
+        txt_result = []
 
         # Directories
         save_dir = Path(increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok))  # increment run
         (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
 
+        with open(save_dir / 'opt.yaml', 'w') as f:
+            yaml.dump(vars(opt), f, sort_keys=False)
+
         # Load model
         model = attempt_load(weights, map_location=device)  # load FP32 model
         gs = max(int(model.stride.max()), 32)  # grid size (max stride)
         imgsz = check_img_size(imgsz, s=gs)  # check img_size
-        
+
         if trace:
             model = TracedModel(model, device, imgsz)
 
@@ -89,14 +93,13 @@ def test(data,
         dataloader = create_dataloader(data[task], imgsz, batch_size, gs, opt, pad=0.5, rect=True,
                                        prefix=colorstr(f'{task}: '))[0]
 
-
     seen = 0
     confusion_matrix = ConfusionMatrix(nc=nc)
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
     coco91class = coco80_to_coco91_class()
     s = ('%20s' + '%12s' * 6) % ('Class', 'Images', 'Labels', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
+    txt_result.append(s)
     p, r, f1, mp, mr, map50, map, t0, t1 = 0., 0., 0., 0., 0., 0., 0., 0., 0.
-    loss = torch.zeros(3, device=device)
     jdict, stats, ap, ap_class, wandb_images = [], [], [], [], []
     for batch_i, (img, targets, paths, shapes) in enumerate(tqdm(dataloader, desc=s)):
         img = img.to(device, non_blocking=True)
@@ -108,20 +111,17 @@ def test(data,
         with torch.no_grad():
             # Run model
             t = time_synchronized()
-            out, train_out = model(img, augment=augment)  # inference and training outputs
 
-            if model.no_anchor:
-                out = out.transpose(-1, -2)  # shape(1,84,6300) to shape(1,6300,84)
-                out[..., :4] = xywh2xyxy(out[..., :4])  # xywh to xyxy
-                # Find the maximum value and corresponding index on the second dimension
-                values, _ = torch.max(out[:, :, 4:], dim=2)
-                out = torch.cat((out[:, :, :4], values.unsqueeze(2), out[:, :, 4:]), dim=2)
+            out = model(img, augment=augment)  # inference and training outputs
+            if isinstance(out, list):
+                out_list = []
+                for out_item in out:
+                    out_list.append(out_item[0])
+                out = torch.cat(out_list, dim=1)
+            else:
+                out = out[0]
 
             t0 += time_synchronized() - t
-
-            # Compute loss
-            if compute_loss:
-                loss += compute_loss([x.float() for x in train_out], targets)[1][:3]  # box, obj, cls
 
             # Run NMS
             targets[:, 2:] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
@@ -235,17 +235,27 @@ def test(data,
 
     # Print results
     pf = '%20s' + '%12i' * 2 + '%12.3g' * 4  # print format
-    print(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
+    s = pf % ('all', seen, nt.sum(), mp, mr, map50, map)
+    print(s)
+    txt_result.append(s)
 
     # Print results per class
     if (verbose or (nc < 50 and not training)) and nc > 1 and len(stats):
         for i, c in enumerate(ap_class):
-            print(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
+            s = pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i])
+            print(s)
+            txt_result.append(s)
 
     # Print speeds
     t = tuple(x / seen * 1E3 for x in (t0, t1, t0 + t1)) + (imgsz, imgsz, batch_size)  # tuple
     if not training:
-        print('Speed: %.1f/%.1f/%.1f ms inference/NMS/total per %gx%g image at batch-size %g' % t)
+        s = 'Speed: %.1f/%.1f/%.1f ms inference/NMS/total per %gx%g image at batch-size %g' % t
+        print(s)
+        txt_result.append(s)
+        with open(save_dir / 'test_result.txt', 'w') as file:
+            # 将列表中的每个元素写入文件
+            for item in txt_result:
+                file.write(item + '\n')
 
     # Plots
     if plots:
@@ -272,7 +282,7 @@ def test(data,
     maps = np.zeros(nc) + map
     for i, c in enumerate(ap_class):
         maps[c] = ap[i]
-    return (mp, mr, map50, map, *(loss.cpu() / len(dataloader)).tolist()), maps, t
+    return (mp, mr, map50, map), maps, t
 
 
 if __name__ == '__main__':
@@ -300,7 +310,7 @@ if __name__ == '__main__':
     opt.save_json |= opt.data.endswith('coco.yaml')
     opt.data = check_file(opt.data)  # check file
     print(opt)
-    #check_requirements()
+    # check_requirements()
 
     if opt.task in ('train', 'val', 'test'):  # run normally
         test(opt.data,
@@ -320,8 +330,8 @@ if __name__ == '__main__':
              )
 
     elif opt.task == 'speed':  # speed benchmarks
-        #for w in opt.weights:
-        test(opt.data, opt.weights, opt.batch_size, opt.img_size, 0.25, 0.45, save_json=False, plots=False)
+        # for w in opt.weights:
+        test(opt.data, opt.weights, opt.batch_size, opt.img_size)
 
     elif opt.task == 'study':  # run over a range of settings and save/plot
         # python test.py --task study --data coco.yaml --iou 0.65 --weights yolov7.pt

@@ -4,5 +4,7 @@ head:
    [in, 1, YOLOv1_Detect, [nc]]
   ]
 
+loss_funtion: yolov1-loss
+
 
 

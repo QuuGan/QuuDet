@@ -1,5 +1,6 @@
 # yolov6-backbone
 out_layer: [4,6,9]
+activate_funtion: nn.ReLU()
 backbone:
   # [from, number, module, args]
   [  

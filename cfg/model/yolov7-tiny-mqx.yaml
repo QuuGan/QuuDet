@@ -1,0 +1,9 @@
+# yolov7-tiny
+model:
+  backbone:
+    name: yolov7-tiny-backbone
+  neck: [ yolov7-tiny-neck, { name: yolov7-neck, aux: true }]
+  head: [ yolo-anchor-free-head, { name: yolov7-head, aux: true }]
+
+
+

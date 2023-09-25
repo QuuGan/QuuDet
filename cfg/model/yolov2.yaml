@@ -8,7 +8,7 @@ model:
     out_layer: [ 5 ]
   head: yolov2-head
 
-loss_funtion: anchor-loss
+
 
 
 

@@ -14,7 +14,7 @@ model:
     name: yolov4-neck
   head: yolo-anchor-head
 
-loss_funtion: anchor-loss
+
 
 
 

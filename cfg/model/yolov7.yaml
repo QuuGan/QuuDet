@@ -13,7 +13,7 @@ model:
     name: yolov7-neck
   head: yolov7-head
 
-loss_funtion: SimOTA-anchor-loss
+
 
 
 

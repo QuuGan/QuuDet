@@ -12,7 +12,7 @@ import torch
 from models.common import *
 from models.experimental import *
 from utils.autoanchor import check_anchor_order
-from utils.general import make_divisible, check_file, set_logging
+from utils.general import make_divisible, check_file, set_logging, xywh2xyxy
 from utils.torch_utils import time_synchronized, fuse_conv_and_bn, model_info, scale_img, initialize_weights, \
     select_device, copy_attr
 from utils.loss import SigmoidBin
@@ -159,6 +159,7 @@ class DetectAnchorFree(nn.Module):
             nn.Sequential(Conv(x, c2, 3), Conv(c2, c2, 3), nn.Conv2d(c2, 4 * self.reg_max, 1)) for x in ch)
         self.cv3 = nn.ModuleList(nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3), nn.Conv2d(c3, self.nc, 1)) for x in ch)
         self.dfl = DFL(self.reg_max) if self.reg_max > 1 else nn.Identity()
+        self.anchors = None
 
     def forward(self, x):
         """Concatenates and returns predicted bounding boxes and class probabilities."""
@@ -189,6 +190,10 @@ class DetectAnchorFree(nn.Module):
             dbox /= img_size
 
         y = torch.cat((dbox, cls.sigmoid()), 1)
+        y = y.transpose(-1, -2)  # shape(1,84,6300) to shape(1,6300,84)
+        # Find the maximum value and corresponding index on the second dimension
+        values, _ = torch.max(y[:, :, 4:], dim=2)
+        y = torch.cat((y[:, :, :4], values.unsqueeze(2), y[:, :, 4:]), dim=2)
         return y if self.export else (y, x)
 
     def bias_init(self):
@@ -780,13 +785,20 @@ class Model(nn.Module):
                 act = None
             layers,self.save = build_model(layers,backbone_dict['backbone'],[ch],[],nc,[],act,scale)
 
-            # build neck
-            if "neck" in modle_dict.keys():
-                out_layer_neck=""
-                model_neck_dict = modle_dict["neck"]
+        # build neck
+        if "neck" in modle_dict.keys():
+            self.neck_out_layer = []
+            out_layer_neck=""
+            model_neck_dict_list = modle_dict["neck"]
+            if isinstance(model_neck_dict_list, str) or isinstance(model_neck_dict_list, dict):
+                model_neck_dict_list = [model_neck_dict_list]
+
+            for index,model_neck_dict in enumerate(model_neck_dict_list):
+                self.neck_out_layer.append(None)
+                neck_name = ""
                 if isinstance(model_neck_dict, str):
                     neck_name = model_neck_dict
-                else:
+                elif isinstance(model_neck_dict, dict):
                     neck_name = model_neck_dict["name"]
                     if "out_layer" in model_neck_dict.keys():
                         out_layer_neck = model_neck_dict["out_layer"]
@@ -797,135 +809,147 @@ class Model(nn.Module):
                 with open(neck_path) as f:
                     neck_dict = yaml.load(f, Loader=yaml.SafeLoader)
                     if out_layer_neck:
-                        self.neck_out_layer = out_layer_neck
+                        self.neck_out_layer[index] = out_layer_neck
                     else:
-                        self.neck_out_layer = neck_dict['out_layer']
-                    self.neck_out_layer = [x + len(layers) for x in self.neck_out_layer]
+                        self.neck_out_layer[index] = neck_dict['out_layer']
+                    self.neck_out_layer[index] = [x + len(layers) for x in self.neck_out_layer[index]]
                     if 'activate_funtion' in neck_dict.keys():
                         act = neck_dict['activate_funtion']
                     else:
                         act = None
                     layers, self.save = build_model(layers,neck_dict['neck'], self.save, self.backbone_out_layer[::-1], nc,[],act,scale)
                     #self.model += self.neck
-            else:
-                self.neck_out_layer = [len(layers) - 1]
+        else:
+            self.neck_out_layer = [[len(layers) - 1]]
 
         # build head
         anchors = []
-        modle_head_dict = modle_dict["head"]
-        if isinstance(modle_head_dict, str):
-            head_name = modle_head_dict
-        else:
-            head_name = modle_head_dict["name"]
-            if "anchors" in modle_head_dict.keys():
-                anchors = modle_head_dict["anchors"]
+        self.head_out_layer = []
+        self.loss_funtion = []
+        if "loss_funtion" in self.yaml.keys():
+            loss_funtion = self.yaml["loss_funtion"]
+
+        modle_head_dict_list = modle_dict["head"]
+        if isinstance(modle_head_dict_list, str) or isinstance(modle_head_dict_list, dict):
+            modle_head_dict_list = [modle_head_dict_list]
+
+        for index,modle_head_dict in enumerate(modle_head_dict_list):
+            self.head_out_layer.append(None)
+            head_name = ""
+            if isinstance(modle_head_dict, str):
+                head_name = modle_head_dict
+            elif isinstance(modle_head_dict, dict):
+                head_name = modle_head_dict["name"]
+                if "anchors" in modle_head_dict.keys():
+                    anchors = modle_head_dict["anchors"]
+
+            head_path = "cfg/component/head/" + head_name + ".yaml"
+            if test:
+                head_path = "../"+head_path
+            with open(head_path) as f:
+                head_dict = yaml.load(f, Loader=yaml.SafeLoader)
+                if 'loss_funtion' in head_dict.keys():
+                    self.loss_funtion.append(head_dict['loss_funtion'])
+                else:
+                    self.loss_funtion.append(loss_funtion)
+
+                if 'anchors' not in head_dict.keys():
+                    anchors = []
+                else:
+                    if len(anchors) == 0:
+                        anchors = head_dict['anchors']
+                    self.na = (len(anchors[0]) // 2) if isinstance(anchors, list) else anchors  # number of anchors
+                    self.nl = len(anchors)
+                    a = torch.tensor(anchors).float().view(self.nl, -1, 2)
+                    self.register_buffer('anchors', a)  # shape(nl,na,2)
+
+                last_length = len(self.save)
+                nf = []
+                for i in range(0,len(self.neck_out_layer[index])):
+                    nf.append("in")
+                (head_dict['head'][0])[0] = nf
+                if 'activate_funtion' in head_dict.keys():
+                    act = head_dict['activate_funtion']
+                else:
+                    act = None
+                layers, self.save = build_model(layers,head_dict['head'], self.save, self.neck_out_layer[index], nc,anchors,act)
+                if 'out_layer' in head_dict.keys():
+                    self.head_out_layer[index] = head_dict['out_layer']
+                    for i in range(len(self.head_out_layer[index])):
+                        self.head_out_layer[index][i]+= last_length
+                else:
+                    self.head_out_layer[index] = len(self.save)-1
 
 
-        head_path = "cfg/component/head/" + head_name + ".yaml"
-        if test:
-            head_path = "../"+head_path
-        with open(head_path) as f:
-            head_dict = yaml.load(f, Loader=yaml.SafeLoader)
-            if 'anchors' not in head_dict.keys():
-                anchors = []
-                self.no_anchor = True
-            else:
-                if len(anchors) == 0:
-                    anchors = head_dict['anchors']
-                self.no_anchor = False
-                self.na = (len(anchors[0]) // 2) if isinstance(anchors, list) else anchors  # number of anchors
-                self.nl = len(anchors)
-                a = torch.tensor(anchors).float().view(self.nl, -1, 2)
-                self.register_buffer('anchors', a)  # shape(nl,na,2)
 
-            last_length = len(self.save)
-            nf = []
-            for i in range(0,len(self.neck_out_layer)):
-                nf.append("in")
-            (head_dict['head'][0])[0] = nf
-            if 'activate_funtion' in head_dict.keys():
-                act = head_dict['activate_funtion']
-            else:
-                act = None
-            layers, self.save = build_model(layers,head_dict['head'], self.save, self.neck_out_layer, nc,anchors,act)
-            if 'out_layer' in head_dict.keys():
-                self.head_out_layer = head_dict['out_layer']
-                for i in range(len(self.head_out_layer)):
-                    self.head_out_layer[i]+= last_length
-            else:
-                self.head_out_layer = len(self.save)-1
+
         self.model = nn.Sequential(*layers)
 
-        self.loss_funtion = self.yaml["loss_funtion"]
         # Define model
         ch = self.yaml['ch'] = self.yaml.get('ch', ch)  # input channels
-        # if nc and nc != self.yaml['nc']:
-        #     logger.info(f"Overriding model.yaml nc={self.yaml['nc']} with nc={nc}")
-        #     self.yaml['nc'] = nc  # override yaml value
-        # if anchors:
-        #     logger.info(f'Overriding model.yaml anchors with anchors={anchors}')
-        #     self.yaml['anchors'] = round(anchors)  # override yaml value
-        #self.model, self.save = parse_model(deepcopy(self.yaml), ch=[ch])  # model, savelist
         self.names = [str(i) for i in range(nc)]  # default names
         # print([x.shape for x in self.forward(torch.zeros(1, ch, 64, 64))])
         # Build strides, anchors
-        if not isinstance(self.head_out_layer,list):
-            m = self.model[self.head_out_layer]  # Detect()
-            if isinstance(m, DetectAnchorFree):
+        for index, modle_head_dict in enumerate(modle_head_dict_list):
+            if not isinstance(self.head_out_layer[index],list):
+                m = self.model[self.head_out_layer[index]]  # Detect()
+                if isinstance(m, DetectAnchorFree):
+                    s = 256  # 2x min stride
+                    ret = self.forward(torch.zeros(1, ch, s, s))
+                    m.stride = torch.tensor([s / x.shape[-2] for x in ret[index]])  # forward
+                    #check_anchor_order(m)
+                    #m.anchors /= m.stride.view(-1, 1, 1)
+                    self.stride = m.stride
+                    self.bias_init(out_layer = self.head_out_layer[index])  # only run once
+                    # print('Strides: %s' % m.stride.tolist())
+                if isinstance(m, Detect):
+                    s = 256  # 2x min stride
+                    ret = self.forward(torch.zeros(1, ch, s, s))
+                    m.stride = torch.tensor([s / x.shape[-2] for x in ret[index]])  # forward
+                    check_anchor_order(m)
+                    m.anchors /= m.stride.view(-1, 1, 1)
+                    self.stride = m.stride
+                    self._initialize_biases(out_layer = self.head_out_layer[index])  # only run once
+                    # print('Strides: %s' % m.stride.tolist())
+                if isinstance(m, IDetect):
+                    s = 256  # 2x min stride
+                    ret = self.forward(torch.zeros(1, ch, s, s))
+                    m.stride = torch.tensor([s / x.shape[-2] for x in ret[index]])  # forward
+                    check_anchor_order(m)
+                    m.anchors /= m.stride.view(-1, 1, 1)
+                    self.stride = m.stride
+                    self._initialize_biases(out_layer = self.head_out_layer[index])  # only run once
+                    # print('Strides: %s' % m.stride.tolist())
+                if isinstance(m, IAuxDetect):
+                    s = 256  # 2x min stride
+                    m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))[:4]])  # forward
+                    #print(m.stride)
+                    check_anchor_order(m)
+                    m.anchors /= m.stride.view(-1, 1, 1)
+                    self.stride = m.stride
+                    self._initialize_aux_biases()  # only run once
+                    # print('Strides: %s' % m.stride.tolist())
+                if isinstance(m, IBin):
+                    s = 256  # 2x min stride
+                    m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
+                    check_anchor_order(m)
+                    m.anchors /= m.stride.view(-1, 1, 1)
+                    self.stride = m.stride
+                    self._initialize_biases_bin()  # only run once
+                    # print('Strides: %s' % m.stride.tolist())
+                if isinstance(m, IKeypoint):
+                    s = 256  # 2x min stride
+                    m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
+                    check_anchor_order(m)
+                    m.anchors /= m.stride.view(-1, 1, 1)
+                    self.stride = m.stride
+                    self._initialize_biases_kpt()  # only run once
+                    # print('Strides: %s' % m.stride.tolist())
+                if isinstance(m, YOLOv1_Detect):
+                    self.stride = torch.tensor([64])
+            else:
                 s = 256  # 2x min stride
-                m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
-                #check_anchor_order(m)
-                #m.anchors /= m.stride.view(-1, 1, 1)
-                self.stride = m.stride
-                self.bias_init()  # only run once
-                # print('Strides: %s' % m.stride.tolist())
-            if isinstance(m, Detect):
-                s = 256  # 2x min stride
-                m.stride = torch.tensor(
-                    [s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
-                check_anchor_order(m)
-                m.anchors /= m.stride.view(-1, 1, 1)
-                self.stride = m.stride
-                self._initialize_biases()  # only run once
-                # print('Strides: %s' % m.stride.tolist())
-            if isinstance(m, IDetect):
-                s = 256  # 2x min stride
-                m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
-                check_anchor_order(m)
-                m.anchors /= m.stride.view(-1, 1, 1)
-                self.stride = m.stride
-                self._initialize_biases()  # only run once
-                # print('Strides: %s' % m.stride.tolist())
-            if isinstance(m, IAuxDetect):
-                s = 256  # 2x min stride
-                m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))[:4]])  # forward
-                #print(m.stride)
-                check_anchor_order(m)
-                m.anchors /= m.stride.view(-1, 1, 1)
-                self.stride = m.stride
-                self._initialize_aux_biases()  # only run once
-                # print('Strides: %s' % m.stride.tolist())
-            if isinstance(m, IBin):
-                s = 256  # 2x min stride
-                m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
-                check_anchor_order(m)
-                m.anchors /= m.stride.view(-1, 1, 1)
-                self.stride = m.stride
-                self._initialize_biases_bin()  # only run once
-                # print('Strides: %s' % m.stride.tolist())
-            if isinstance(m, IKeypoint):
-                s = 256  # 2x min stride
-                m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
-                check_anchor_order(m)
-                m.anchors /= m.stride.view(-1, 1, 1)
-                self.stride = m.stride
-                self._initialize_biases_kpt()  # only run once
-                # print('Strides: %s' % m.stride.tolist())
-            if isinstance(m, YOLOv1_Detect):
-                self.stride = torch.tensor([64])
-        else:
-            s = 256  # 2x min stride
-            self.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
+                self.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
         # Init weights, biases
         initialize_weights(self)
         self.info()
@@ -977,7 +1001,7 @@ class Model(nn.Module):
                 print('%10.1f%10.0f%10.1fms %-40s' % (o, m.np, dt[-1], m.type))
 
             x = m(x)  # run
-            y.append(x) 
+            y.append(x)
 
               # save output
         if isinstance(self.head_out_layer,list):
@@ -987,18 +1011,18 @@ class Model(nn.Module):
         if profile:
             print('%.1fms total' % sum(dt))
         return x
-    def bias_init(self):
+    def bias_init(self,out_layer=-1):
         """Initialize Detect() biases, WARNING: requires stride availability."""
-        m = self.model[-1]  # Detect() module
+        m = self.model[out_layer]  # Detect() module
         # cf = torch.bincount(torch.tensor(np.concatenate(dataset.labels, 0)[:, 0]).long(), minlength=nc) + 1
         # ncf = math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # nominal class frequency
         for a, b, s in zip(m.cv2, m.cv3, m.stride):  # from
             a[-1].bias.data[:] = 1.0  # box
             b[-1].bias.data[:m.nc] = math.log(5 / m.nc / (640 / s) ** 2)  # cls (.01 objects, 80 classes, 640 img)
-    def _initialize_biases(self, cf=None):  # initialize biases into Detect(), cf is class frequency
+    def _initialize_biases(self, cf=None,out_layer=-1):  # initialize biases into Detect(), cf is class frequency
         # https://arxiv.org/abs/1708.02002 section 3.3
         # cf = torch.bincount(torch.tensor(np.concatenate(dataset.labels, 0)[:, 0]).long(), minlength=nc) + 1.
-        m = self.model[-1]  # Detect() module
+        m = self.model[out_layer]  # Detect() module
         for mi, s in zip(m.m, m.stride):  # from
             b = mi.bias.view(m.na, -1)  # conv.bias(255) to (3,85)
             b.data[:, 4] += math.log(8 / (640 / s) ** 2)  # obj (8 objects per 640 image)
@@ -1141,7 +1165,8 @@ def build_model(layers,d,inch,in_layer,nc,anchors,act,scales=None):  # model_dic
                  Ghost, GhostCSPA, GhostCSPB, GhostCSPC,
                  SwinTransformerBlock, STCSPA, STCSPB, STCSPC,
                  SwinTransformer2Block, ST2CSPA, ST2CSPB, ST2CSPC,C2f,C3,SPPCSP,VoVGSCSP,VoVGSCSPC,GSConv,CBAM,nn.ConvTranspose2d,
-                 Yolov7_E_ELAN_PConv,Yolov7_E_ELAN_DCNV,SPPCSPC_ATT]:
+                 Yolov7_E_ELAN_PConv,Yolov7_E_ELAN_DCNV,SPPCSPC_ATT,
+                 DoubleIncConv,Down]:
             c1, c2 = ch[f], args[0]
             if scales and  c2 != nc :  # if c2 not equal to number of classes (i.e. for Classify() output)
                 c2 = make_divisible(min(c2, scales["max_channels"]) * scales["width"], 8)
@@ -1180,6 +1205,9 @@ def build_model(layers,d,inch,in_layer,nc,anchors,act,scales=None):  # model_dic
             c1, c2 = ch[f[0]], args[0]
             args = [c1, c2]
             c2 *= 4
+        elif m is Up or m is Up_SP:
+            c1, c2 = ch[f[0]], args[0]
+            args = [c1*2, c2]
         elif m is Chuncat:
             c2 = sum([ch[x] for x in f])
         elif m is Shortcut or m is YOLOv1_Detect:
@@ -1238,7 +1266,11 @@ if __name__ == '__main__':
         y = model(img, profile=True)
         if isinstance(y,list):
             for l in y:
-                print(l.shape)
+                if isinstance(l,list):
+                    for k in l:
+                        print(k.shape)
+                else:
+                    print(l.shape)
         else:
             print(y.shape)
 

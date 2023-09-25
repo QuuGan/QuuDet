@@ -1,0 +1,8 @@
+# UNet-seg-head
+head:
+  [
+    [[in], 1, UnetDetect, [nc]]
+  ]
+
+
+
