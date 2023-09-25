@@ -23,7 +23,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch-size', type=int, default=1, help='batch size')
     parser.add_argument('--dynamic', action='store_true', help='dynamic ONNX axes')
     parser.add_argument('--dynamic-batch', action='store_true', help='dynamic batch onnx for tensorrt and onnx-runtime')
-    parser.add_argument('--grid', action='store_true', help='export Detect() layer grid')
+    parser.add_argument('--no-grid', action='store_true', help='not export Detect() layer grid')
     parser.add_argument('--end2end', action='store_true', help='export end2end onnx')
     parser.add_argument('--max-wh', type=int, default=None, help='None for tensorrt nms, int value for onnx-runtime nms')
     parser.add_argument('--topk-all', type=int, default=100, help='topk objects for every images')
@@ -64,7 +64,7 @@ if __name__ == '__main__':
                 m.act = SiLU()
         # elif isinstance(m, models.yolo.Detect):
         #     m.forward = m.forward_export  # assign forward (optional)
-    model.model[-1].export = not opt.grid  # set Detect() layer grid export
+    model.model[-1].export = opt.no_grid  # set Detect() layer grid export
     y = model(img)  # dry run
     if opt.include_nms:
         model.model[-1].include_nms = True
@@ -143,7 +143,7 @@ if __name__ == '__main__':
                     'output': {0: 'batch'},
                 }
             dynamic_axes.update(output_axes)
-        if opt.grid:
+        if not opt.no_grid:
             if opt.end2end:
                 print('\nStarting export end2end onnx model for %s...' % 'TensorRT' if opt.max_wh is None else 'onnxruntime')
                 model = End2End(model,opt.topk_all,opt.iou_thres,opt.conf_thres,opt.max_wh,device,len(labels))
@@ -154,7 +154,8 @@ if __name__ == '__main__':
                 else:
                     output_names = ['output']
             else:
-                model.model[-1].concat = True
+                for out_layer in model.head_out_layer:
+                    model.model[out_layer].concat = True
 
         torch.onnx.export(model, img, f, verbose=False, opset_version=12, input_names=['images'],
                           output_names=output_names,
