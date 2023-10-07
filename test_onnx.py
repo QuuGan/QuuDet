@@ -73,8 +73,8 @@ def test_onnx(opt):
 
         # Run model
         t = time_synchronized()
-        out = model.run(output_names, {input_names[0]: img.numpy()})  # inference and training outputs
-        out = torch.tensor(out[0])
+        out = model.run(output_names, {input_names[0]: img.cpu().numpy()})  # inference and training outputs
+        out = torch.tensor(out[0]).to(device)
         t0 += time_synchronized() - t
 
         # Run NMS
