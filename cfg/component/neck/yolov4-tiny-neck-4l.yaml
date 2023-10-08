@@ -10,7 +10,7 @@ neck:
     [ -2, 1, Conv, [ 64, 1, 1 ] ],
     [ -1, 1, nn.Upsample, [ None, 2, 'nearest' ] ],
     [ [ -1, in ], 1, Concat, [ 1 ] ],
-    [ -1, 1, Conv, [ 128, 3, 1 ] ] #9
+    [ -1, 1, Conv, [ 128, 3, 1 ] ], #9
     [ -2, 1, Conv, [ 64, 1, 1 ] ],
     [ -1, 1, nn.Upsample, [ None, 2, 'nearest' ] ],
     [ [ -1, in ], 1, Concat, [ 1 ] ],
