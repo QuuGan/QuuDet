@@ -50,8 +50,8 @@ def convert_annotation(image_id,is_train,classes,label_path):
     tree = ET.parse(in_file)
     root = tree.getroot()
     size = root.find('size')
-    h = int(size.find('width').text)
-    w = int(size.find('height').text)
+    w = int(size.find('width').text)
+    h = int(size.find('height').text)
     for obj in root.iter('object'):
         # difficult = obj.find('difficult').text
         difficult = obj.find('difficult').text
