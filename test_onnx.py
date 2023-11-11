@@ -10,17 +10,48 @@ from tqdm import tqdm
 
 from utils.datasets import create_dataloader
 from utils.general import check_dataset, check_img_size, \
-    box_iou, non_max_suppression, scale_coords,  xywh2xyxy, set_logging, increment_path, colorstr
+    box_iou, non_max_suppression, scale_coords,  xywh2xyxy,xyxy2xywh, set_logging, increment_path, colorstr
 from utils.metrics import ap_per_class, ConfusionMatrix
 from utils.plots import plot_images, output_to_target
 from utils.torch_utils import select_device, time_synchronized
+import onnx
 
+def post_processing(output, height, width):
+    box_array = output[0]
+    confs = output[1]
 
+    # [batch, num, 4]
+    box_array = box_array[:, :, 0]
+    for i in range(box_array.shape[0]):
+        box_array[i] = xyxy2xywh(box_array[i])
+
+        box_array[i][:, 1] = box_array[i][:, 1] * height
+        box_array[i][:, 3] = box_array[i][:, 3] * height
+
+        # 修改第1、3个数字
+        box_array[i][:, 0] = box_array[i][:, 0] * width
+        box_array[i][:, 2] = box_array[i][:, 2] * width
+
+    max_conf = np.max(confs, axis=2, keepdims=True)
+    return np.concatenate((box_array, max_conf, confs), axis=2)
+def count_parameters(model_path):
+    model = onnx.load(model_path)
+    total_params = 0
+    for initializer in model.graph.initializer:
+        shape = initializer.dims
+        param_size = np.prod(shape)
+        total_params += param_size
+    return total_params
 def test_onnx(opt):
     set_logging()
 
     #loadmodel
-    model = onnxruntime.InferenceSession(opt.weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+    if opt.tensorrt:
+        model = onnxruntime.InferenceSession(opt.weights, providers=['TensorrtExecutionProvider'])
+    else:
+        model = onnxruntime.InferenceSession(opt.weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+    num_params = count_parameters(opt.weights)
+    print("Total parameters: ", num_params)
     model_inputs = model.get_inputs()
     input_names = [model_inputs[i].name for i in range(len(model_inputs))]
     input_shape = model_inputs[0].shape
@@ -53,7 +84,8 @@ def test_onnx(opt):
 
     # Dataloader
     opt.single_cls=False
-    dataloader = create_dataloader(data["val"], imgsz, batch_size, gs, opt, pad=0.5, rect=False,
+
+    dataloader = create_dataloader(data[opt.task] , imgsz, batch_size, gs, opt, pad=0.5, rect=False,
                                    prefix=colorstr(f'{"val"}: '))[0]
 
     seen = 0
@@ -74,14 +106,18 @@ def test_onnx(opt):
         # Run model
         t = time_synchronized()
         out = model.run(output_names, {input_names[0]: img.cpu().numpy()})  # inference and training outputs
-        out = torch.tensor(out[0]).to(device)
+        if opt.darknet:
+            out = post_processing(out,width,height)
+            out = torch.tensor(out).to(device)
+        else:
+            out = torch.tensor(out[0]).to(device)
         t0 += time_synchronized() - t
 
         # Run NMS
         targets[:, 2:] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
         lb = []  # for autolabelling
         t = time_synchronized()
-        out = non_max_suppression(out, conf_thres=opt.conf_thres, iou_thres=opt.iou_thres, labels=lb, multi_label=True)
+        out = non_max_suppression(out, conf_thres=opt.conf_thres, iou_thres=opt.iou_thres, labels=lb, multi_label=True,v6=opt.v6)
         t1 += time_synchronized() - t
 
 
@@ -172,12 +208,16 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='test_onnx.py')
     parser.add_argument('--weights', type=str, default='', help='model.onnx path(s)')
     parser.add_argument('--data', type=str, default='', help='*.data path')
-    parser.add_argument('--conf-thres', type=float, default=0.005, help='object confidence threshold')
+    parser.add_argument('--conf-thres', type=float, default=0.5, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.5, help='IOU threshold for NMS')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
+    parser.add_argument('--task', default='val', help='train, val, test, speed or study')
     parser.add_argument('--project', default='runs/test_onnx', help='save to project/name')
     parser.add_argument('--name', default='exp', help='save to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
+    parser.add_argument('--darknet', action='store_true', help='darknet_onnx need process')
+    parser.add_argument('--v6', action='store_true', help='v6_onnx')
+    parser.add_argument('--tensorrt', action='store_true', help='use tensorrt')
     opt = parser.parse_args()
 
     print(opt)
