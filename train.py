@@ -16,6 +16,7 @@ import torch.optim as optim
 import torch.optim.lr_scheduler as lr_scheduler
 import torch.utils.data
 import yaml
+import shutil
 from torch.cuda import amp
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.tensorboard import SummaryWriter
@@ -96,16 +97,41 @@ def train(hyp, opt, device, tb_writer=None):
 
     # Model
     pretrained = weights.endswith('.pt')
+    cfg_path = opt.cfg
     if pretrained:
         ckpt = torch.load(weights, map_location=device)  # load checkpoint
-        model = Model(opt.cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
+        cfg_path = opt.cfg or ckpt['model'].yaml
+        model = Model(cfg_path, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
         exclude = ['anchor'] if (opt.cfg or hyp.get('anchors')) and not opt.resume else []  # exclude keys
         state_dict = ckpt['model'].float().state_dict()  # to FP32
         state_dict = intersect_dicts(state_dict, model.state_dict(), exclude=exclude)  # intersect
         model.load_state_dict(state_dict, strict=False)  # load
         logger.info('Transferred %g/%g items from %s' % (len(state_dict), len(model.state_dict()), weights))  # report
     else:
-        model = Model(opt.cfg, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
+        model = Model(cfg_path, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
+
+    # Save cfg file
+
+    cfg_folder = save_dir / 'cfg'
+    os.makedirs(cfg_folder)
+    if not os.path.exists(cfg_path):
+        cfg_path = cfg_path[:-6] + cfg_path[-5:]
+    shutil.copy(cfg_path, cfg_folder)
+
+    cfg_backbone_folder = save_dir / 'cfg' / 'backbone'
+    os.makedirs(cfg_backbone_folder)
+    for backbone_path in model.backbone_path:
+        shutil.copy(backbone_path, cfg_backbone_folder)
+    cfg_neck_folder = save_dir / 'cfg' / 'neck'
+    os.makedirs(cfg_neck_folder)
+    for neck_path in model.neck_path:
+        shutil.copy(neck_path, cfg_neck_folder)
+    cfg_head_folder = save_dir / 'cfg' / 'head'
+    os.makedirs(cfg_head_folder)
+    for head_path in model.head_path:
+        shutil.copy(head_path, cfg_head_folder)
+
+
     with torch_distributed_zero_first(rank):
         check_dataset(data_dict)  # check
     train_path = data_dict['train']
@@ -269,7 +295,7 @@ def train(hyp, opt, device, tb_writer=None):
 
     # Trainloader
     dataloader, dataset = create_dataloader(train_path, imgsz, batch_size, gs, opt,
-                                            hyp=hyp, augment=True, cache=opt.cache_images, rect=opt.rect, rank=rank,
+                                            hyp=hyp, augment=True, cache=not opt.not_cache_images, rect=opt.rect, rank=rank,
                                             world_size=opt.world_size, workers=opt.workers,
                                             image_weights=opt.image_weights, quad=opt.quad, prefix=colorstr('train: '))
     mlc = np.concatenate(dataset.labels, 0)[:, 0].max()  # max label class
@@ -279,7 +305,7 @@ def train(hyp, opt, device, tb_writer=None):
     # Process 0
     if rank in [-1, 0]:
         testloader = create_dataloader(test_path, imgsz_test, batch_size * 2, gs, opt,  # testloader
-                                       hyp=hyp, cache=opt.cache_images and not opt.notest, rect=True, rank=-1,
+                                       hyp=hyp, cache=not opt.not_cache_images , rect=True, rank=-1,
                                        world_size=opt.world_size, workers=opt.workers,
                                        pad=0.5, prefix=colorstr('val: '))[0]
 
@@ -322,7 +348,7 @@ def train(hyp, opt, device, tb_writer=None):
     nw = max(round(hyp['warmup_epochs'] * nb), 1000)  # number of warmup iterations, max(3 epochs, 1k iterations)
     # nw = min(nw, (epochs - start_epoch) / 2 * nb)  # limit warmup to < 1/2 of training
     maps = np.zeros(nc)  # mAP per class
-    results = (0, 0, 0, 0, 0, 0)  # P, R, mAP@.5, mAP@.5-.95
+    results = (0, 0, 0, 0)  # P, R, mAP@.5, mAP@.5-.95
     scheduler.last_epoch = start_epoch - 1  # do not move
     scaler = amp.GradScaler(enabled=cuda)
     compute_loss_list = []
@@ -347,6 +373,14 @@ def train(hyp, opt, device, tb_writer=None):
                 f'Logging results to {save_dir}\n'
                 f'Starting training for {epochs} epochs...')
     torch.save(model, wdir / 'init.pt')
+    if opt.autoval:
+        val_epochs = list(range(int(epochs / 8), epochs + 1, 8))
+        val_epochs += list(range(int(epochs / 4), epochs + 1, 4))
+        val_epochs += list(range(int(epochs / 2), epochs + 1, 2))
+        val_epochs += list(range(int(epochs / 1.1), epochs + 1, 1))
+    else:
+        val_epochs = list(range(epochs + 1))
+
     for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
         model.train()
 
@@ -509,7 +543,7 @@ def train(hyp, opt, device, tb_writer=None):
             # mAP
             ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'gr', 'names', 'stride', 'class_weights'])
             final_epoch = epoch + 1 == epochs
-            if not opt.notest or final_epoch:  # Calculate mAP
+            if (not opt.notest or final_epoch) and epoch in val_epochs:  # Calculate mAP
                 wandb_logger.current_epoch = epoch + 1
                 results, maps, times = test.test(data_dict,
                                                  batch_size=batch_size * 2,
@@ -526,10 +560,12 @@ def train(hyp, opt, device, tb_writer=None):
                                                  is_coco=is_coco)
 
             # Write
-            with open(results_file, 'a') as f:
-                f.write(s + '%10.4g' * 4 % results + '\n')  # append metrics, val_loss
+            if epoch in val_epochs:
+               with open(results_file, 'a') as f:
+                   f.write(s + '%10.4g' * 4 % results + '\n')  # append metrics, val_loss
             if len(opt.name) and opt.bucket:
                 os.system('gsutil cp %s gs://%s/results/results%s.txt' % (results_file, opt.bucket, opt.name))
+
 
             # Log
             tags = ['train/box_loss', 'train/obj_loss', 'train/cls_loss',  # train loss
@@ -549,7 +585,7 @@ def train(hyp, opt, device, tb_writer=None):
             wandb_logger.end_epoch(best_result=best_fitness == fi)
 
             # Save model
-            if (not opt.nosave) or (final_epoch and not opt.evolve):  # if save
+            if ((not opt.nosave) or (final_epoch and not opt.evolve)) and epoch in val_epochs:  # if save
                 ckpt = {'epoch': epoch,
                         'best_fitness': best_fitness,
                         'training_results': results_file.read_text(),
@@ -644,11 +680,12 @@ if __name__ == '__main__':
     parser.add_argument('--clear', action='store_true', help='start train from 0 epoch')
     parser.add_argument('--nosave-epoch', action='store_true', help='only save best and last')
     parser.add_argument('--nosave', action='store_true', help='only save final checkpoint')
+    parser.add_argument('--autoval', action='store_true', help='Control the number of validation based on epoch')
     parser.add_argument('--notest', action='store_true', help='only test final epoch')
     parser.add_argument('--noautoanchor', action='store_true', help='disable autoanchor check')
     parser.add_argument('--evolve', action='store_true', help='evolve hyperparameters')
     parser.add_argument('--bucket', type=str, default='', help='gsutil bucket')
-    parser.add_argument('--cache-images', action='store_true', help='cache images for faster training')
+    parser.add_argument('--not-cache-images', action='store_true', help='cache images for faster training')
     parser.add_argument('--image-weights', action='store_true', help='use weighted image selection for training')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--multi-scale', action='store_true', help='vary img-size +/- 50%%')
