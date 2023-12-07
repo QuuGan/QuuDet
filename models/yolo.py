@@ -732,11 +732,14 @@ class UnetDetect(nn.Module):
 class Model(nn.Module):
     def __init__(self, cfg , ch=3, nc=80, anchors=None,test=False):  # model, input channels, number of classes
         super(Model, self).__init__()
+        self.backbone_path = []
+        self.neck_path = []
+        self.head_path = []
         self.traced = False
         scale = None
         if isinstance(cfg, dict):
             self.yaml = cfg  # model dict
-            if 'scale' in self.yaml.keys():
+            if 'scale' in self.yaml:
                 scale = self.yaml['scale']
         else:  # is *.yaml
               # for torch hub
@@ -757,7 +760,7 @@ class Model(nn.Module):
 
         modle_dict = self.yaml["model"]
 
-        if scale and "scales" in modle_dict.keys():
+        if scale and "scales" in modle_dict:
             scales = modle_dict["scales"]
             scale_list = scales[scale]
             scale={"depth": scale_list[0], "width": scale_list[1], "max_channels": scale_list[2]}
@@ -767,10 +770,11 @@ class Model(nn.Module):
             backbone_name = model_backbone_dict
         else:
             backbone_name = model_backbone_dict["name"]
-            if "out_layer" in model_backbone_dict.keys():
+            if "out_layer" in model_backbone_dict:
                 out_layer_backbone = model_backbone_dict["out_layer"]
 
         backbone_path = "cfg/component/backbone/"+backbone_name+".yaml"
+        self.backbone_path.append(backbone_path)
         if test:
             backbone_path = "../"+backbone_path
         with open(backbone_path) as f:
@@ -779,14 +783,14 @@ class Model(nn.Module):
                 self.backbone_out_layer = out_layer_backbone
             else:
                 self.backbone_out_layer = backbone_dict['out_layer']
-            if 'activate_funtion' in backbone_dict.keys():
+            if 'activate_funtion' in backbone_dict:
                 act = backbone_dict['activate_funtion']
             else:
                 act = None
             layers,self.save = build_model(layers,backbone_dict['backbone'],[ch],[],nc,[],act,scale)
 
         # build neck
-        if "neck" in modle_dict.keys():
+        if "neck" in modle_dict:
             self.neck_out_layer = []
             out_layer_neck=""
             model_neck_dict_list = modle_dict["neck"]
@@ -800,10 +804,11 @@ class Model(nn.Module):
                     neck_name = model_neck_dict
                 elif isinstance(model_neck_dict, dict):
                     neck_name = model_neck_dict["name"]
-                    if "out_layer" in model_neck_dict.keys():
+                    if "out_layer" in model_neck_dict:
                         out_layer_neck = model_neck_dict["out_layer"]
 
                 neck_path = "cfg/component/neck/" + neck_name + ".yaml"
+                self.neck_path.append(neck_path)
                 if test:
                     neck_path = "../" + neck_path
                 with open(neck_path) as f:
@@ -813,7 +818,7 @@ class Model(nn.Module):
                     else:
                         self.neck_out_layer[index] = neck_dict['out_layer']
                     self.neck_out_layer[index] = [x + len(layers) for x in self.neck_out_layer[index]]
-                    if 'activate_funtion' in neck_dict.keys():
+                    if 'activate_funtion' in neck_dict:
                         act = neck_dict['activate_funtion']
                     else:
                         act = None
@@ -826,7 +831,7 @@ class Model(nn.Module):
         anchors = []
         self.head_out_layer = []
         self.loss_funtion = []
-        if "loss_funtion" in self.yaml.keys():
+        if "loss_funtion" in self.yaml:
             loss_funtion = self.yaml["loss_funtion"]
 
         modle_head_dict_list = modle_dict["head"]
@@ -840,20 +845,21 @@ class Model(nn.Module):
                 head_name = modle_head_dict
             elif isinstance(modle_head_dict, dict):
                 head_name = modle_head_dict["name"]
-                if "anchors" in modle_head_dict.keys():
+                if "anchors" in modle_head_dict:
                     anchors = modle_head_dict["anchors"]
 
             head_path = "cfg/component/head/" + head_name + ".yaml"
+            self.head_path.append(head_path)
             if test:
                 head_path = "../"+head_path
             with open(head_path) as f:
                 head_dict = yaml.load(f, Loader=yaml.SafeLoader)
-                if 'loss_funtion' in head_dict.keys():
+                if 'loss_funtion' in head_dict:
                     self.loss_funtion.append(head_dict['loss_funtion'])
                 else:
                     self.loss_funtion.append(loss_funtion)
 
-                if 'anchors' not in head_dict.keys():
+                if 'anchors' not in head_dict:
                     anchors = []
                 else:
                     if len(anchors) == 0:
@@ -868,12 +874,12 @@ class Model(nn.Module):
                 for i in range(0,len(self.neck_out_layer[index])):
                     nf.append("in")
                 (head_dict['head'][0])[0] = nf
-                if 'activate_funtion' in head_dict.keys():
+                if 'activate_funtion' in head_dict:
                     act = head_dict['activate_funtion']
                 else:
                     act = None
                 layers, self.save = build_model(layers,head_dict['head'], self.save, self.neck_out_layer[index], nc,anchors,act)
-                if 'out_layer' in head_dict.keys():
+                if 'out_layer' in head_dict:
                     self.head_out_layer[index] = head_dict['out_layer']
                     for i in range(len(self.head_out_layer[index])):
                         self.head_out_layer[index][i]+= last_length
