@@ -605,7 +605,7 @@ def box_diou(box1, box2, eps: float = 1e-7):
     return iou - (centers_distance_squared / diagonal_distance_squared)
 
 
-def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=None, agnostic=False, multi_label=False,
+def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=None, agnostic=False, multi_label=False,v6=False,
                         labels=()):
     """Runs Non-Maximum Suppression (NMS) on inference results
 
@@ -645,8 +645,8 @@ def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=Non
         if not x.shape[0]:
             continue
 
-        # Compute conf
-        if nc == 1:
+        #Compute conf
+        if nc == 1 and not v6:
             x[:, 5:] = x[:, 4:5]  # for models with one class, cls_loss is 0 and cls_conf is always 0.5,
             # so there is no need to multiplicate.
         else:
