@@ -1010,7 +1010,7 @@ class Model(nn.Module):
             y.append(x)
 
               # save output
-        if isinstance(self.head_out_layer,list):
+        if isinstance(self.head_out_layer,list) and not self.traced:
             x = []
             for out_layer in self.head_out_layer:
                 x.append(y[out_layer])
@@ -1125,7 +1125,7 @@ class Model(nn.Module):
         return m
 
     def info(self, verbose=False, img_size=640):  # print model information
-        model_info(self, verbose, img_size)
+        self.model_parameters = model_info(self, verbose, img_size)
 
 def build_model(layers,d,inch,in_layer,nc,anchors,act,scales=None):  # model_dict, input_channels(3)
 
