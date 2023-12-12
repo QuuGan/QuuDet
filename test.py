@@ -16,7 +16,8 @@ from utils.general import coco80_to_coco91_class, check_dataset, check_file, che
 from utils.metrics import ap_per_class, ConfusionMatrix
 from utils.plots import plot_images, output_to_target, plot_study_txt
 from utils.torch_utils import select_device, time_synchronized, TracedModel
-
+import openpyxl
+from datetime import datetime
 
 def test(data,
          weights=None,
@@ -58,7 +59,10 @@ def test(data,
             yaml.dump(vars(opt), f, sort_keys=False)
 
         # Load model
+
         model = attempt_load(weights, map_location=device)  # load FP32 model
+        yaml_file = model.yaml_file
+        model_parameters = model.model_parameters
         gs = max(int(model.stride.max()), 32)  # grid size (max stride)
         imgsz = check_img_size(imgsz, s=gs)  # check img_size
 
@@ -257,6 +261,33 @@ def test(data,
             for item in txt_result:
                 file.write(item + '\n')
 
+            # 打开Excel文件
+            if opt.excel != "":
+                # opt.excel = save_dir /opt.excel
+                is_new_excel = False
+                try:
+                    workbook = openpyxl.load_workbook(opt.excel)
+                except:
+                    workbook = openpyxl.Workbook()
+                    is_new_excel = True
+
+                # 选择活动工作表（即当前显示的工作表）
+                sheet = workbook.active
+
+                if is_new_excel:
+                    sheet.append(
+                        ["datetime", "name", "precision", "recall", "map50", "map95", "time(ms)", "parameters", "path",
+                         "data"])
+
+                test_date = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+                sheet.append([test_date, yaml_file.replace("\\", "/").split("/")[-1].split(".")[-2],
+                              "{:.2f}%".format(p * 100), "{:.2f}%".format(r * 100),
+                              "{:.2f}%".format(map50 * 100), "{:.2f}%".format(map * 100), "{:.1f}".format(t[2]),
+                              str(model_parameters), opt.weights, opt.data])
+
+                # 保存更改
+                workbook.save(opt.excel)
+
     # Plots
     if plots:
         confusion_matrix.plot(save_dir=save_dir, names=list(names.values()))
@@ -305,7 +336,8 @@ if __name__ == '__main__':
     parser.add_argument('--project', default='runs/test', help='save to project/name')
     parser.add_argument('--name', default='exp', help='save to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
-    parser.add_argument('--trace', action='store_true', help='trace model')
+    parser.add_argument('--no-trace', action='store_true', help='not trace model')
+    parser.add_argument('--excel', type=str, default=r'test_result.xlsx', help='excel file path')
     opt = parser.parse_args()
     opt.save_json |= opt.data.endswith('coco.yaml')
     opt.data = check_file(opt.data)  # check file
@@ -326,7 +358,7 @@ if __name__ == '__main__':
              save_txt=opt.save_txt | opt.save_hybrid,
              save_hybrid=opt.save_hybrid,
              save_conf=opt.save_conf,
-             trace=opt.trace
+             trace=not opt.no_trace
              )
 
     elif opt.task == 'speed':  # speed benchmarks

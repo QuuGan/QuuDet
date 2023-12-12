@@ -15,8 +15,11 @@ from utils.metrics import ap_per_class, ConfusionMatrix
 from utils.plots import plot_images, output_to_target
 from utils.torch_utils import select_device, time_synchronized
 import onnx
+import openpyxl
+from datetime import datetime
 
-def post_processing(output, height, width):
+
+def post_processing(output, width,height):
     box_array = output[0]
     confs = output[1]
 
@@ -56,7 +59,8 @@ def test_onnx(opt):
     input_names = [model_inputs[i].name for i in range(len(model_inputs))]
     input_shape = model_inputs[0].shape
     batch_size = input_shape[0]
-    img_size =  input_shape[3]
+    img_size_height =  input_shape[2]
+    img_size = img_size_width =  input_shape[3]
 
     model_outputs = model.get_outputs()
     output_names = [model_outputs[i].name for i in range(len(model_outputs))]
@@ -85,7 +89,7 @@ def test_onnx(opt):
     # Dataloader
     opt.single_cls=False
 
-    dataloader = create_dataloader(data[opt.task] , imgsz, batch_size, gs, opt, pad=0.5, rect=False,
+    dataloader = create_dataloader(data[opt.task] , (img_size_height,img_size_width), batch_size, gs, opt, pad=0.5, rect=False,
                                    prefix=colorstr(f'{"val"}: '))[0]
 
     seen = 0
@@ -112,6 +116,13 @@ def test_onnx(opt):
         else:
             out = torch.tensor(out[0]).to(device)
         t0 += time_synchronized() - t
+
+        if opt.v8:
+            out = out.transpose(-1, -2)  # shape(1,84,6300) to shape(1,6300,84)
+            # Find the maximum value and corresponding index on the second dimension
+            values, _ = torch.max(out[:, :, 4:], dim=2)
+            out = torch.cat((out[:, :, :4], values.unsqueeze(2), out[:, :, 4:]), dim=2)
+
 
         # Run NMS
         targets[:, 2:] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
@@ -203,6 +214,34 @@ def test_onnx(opt):
 
     print('Speed: %.1f/%.1f/%.1f ms inference/NMS/total per %gx%g image at batch-size %g' % t)
 
+    # 打开Excel文件
+    if opt.excel != "":
+        #opt.excel = save_dir /opt.excel
+        is_new_excel = False
+        try:
+            workbook = openpyxl.load_workbook(opt.excel)
+        except:
+            workbook = openpyxl.Workbook()
+            is_new_excel = True
+
+
+
+        # 选择活动工作表（即当前显示的工作表）
+        sheet = workbook.active
+
+        if is_new_excel:
+            sheet.append(["datetime","name", "precision", "recall","map50","map95","time","parameters","path","data"])
+
+        tensorrt=""
+        if opt.tensorrt:
+            tensorrt = "(trt)"
+
+        test_date = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+        sheet.append([test_date,opt.weights.replace("\\","/").split("/")[-1].replace(".onnx","")+tensorrt,"{:.2f}%".format(p[0]*100), "{:.2f}%".format(r[0]*100), "{:.2f}%".format(ap50[0]*100), "{:.2f}%".format(ap[0]*100), "{:.1f}".format(t[2]),str(num_params),opt.weights,opt.data])
+
+        # 保存更改
+        workbook.save(opt.excel)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='test_onnx.py')
@@ -217,7 +256,9 @@ if __name__ == '__main__':
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--darknet', action='store_true', help='darknet_onnx need process')
     parser.add_argument('--v6', action='store_true', help='v6_onnx')
+    parser.add_argument('--v8', action='store_true', help='v8_onnx')
     parser.add_argument('--tensorrt', action='store_true', help='use tensorrt')
+    parser.add_argument('--excel', type=str, default=r'onnx_result.xlsx', help='excel file path')
     opt = parser.parse_args()
 
     print(opt)

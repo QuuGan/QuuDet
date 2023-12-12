@@ -599,7 +599,7 @@ def train(hyp, opt, device, tb_writer=None):
                 torch.save(ckpt, last)
                 if best_fitness == fi:
                     torch.save(ckpt, best)
-                if not opt.nosave_epoch:
+                if opt.notonlybest:
                     if (best_fitness == fi) and (epoch >= 200):
                         torch.save(ckpt, wdir / 'best_{:03d}.pt'.format(epoch))
                     if epoch == 0:
@@ -678,7 +678,7 @@ if __name__ == '__main__':
                         help='gradually reducing data augmentation methods based on epoch in four stages')
     parser.add_argument('--fabric', action='store_true', help='Enable fabric to accelerate training')
     parser.add_argument('--clear', action='store_true', help='start train from 0 epoch')
-    parser.add_argument('--nosave-epoch', action='store_true', help='only save best and last')
+    parser.add_argument('--notonlybest', action='store_true', help='not only save best and last')
     parser.add_argument('--nosave', action='store_true', help='only save final checkpoint')
     parser.add_argument('--autoval', action='store_true', help='Control the number of validation based on epoch')
     parser.add_argument('--notest', action='store_true', help='only test final epoch')
