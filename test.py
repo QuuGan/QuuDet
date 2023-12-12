@@ -103,7 +103,7 @@ def test(data,
     coco91class = coco80_to_coco91_class()
     s = ('%20s' + '%12s' * 6) % ('Class', 'Images', 'Labels', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
     txt_result.append(s)
-    p, r, f1, mp, mr, map50, map, t0, t1 = 0., 0., 0., 0., 0., 0., 0., 0., 0.
+    p, r, f1, mp, mr, map50, map, t0, t1 = [0.], [0.], 0., 0., 0., 0., 0., 0., 0.
     jdict, stats, ap, ap_class, wandb_images = [], [], [], [], []
     for batch_i, (img, targets, paths, shapes) in enumerate(tqdm(dataloader, desc=s)):
         img = img.to(device, non_blocking=True)
@@ -235,6 +235,7 @@ def test(data,
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
         nt = np.bincount(stats[3].astype(np.int64), minlength=nc)  # number of targets per class
     else:
+        ap50, ap = [0.], [0.]
         nt = torch.zeros(1)
 
     # Print results
@@ -281,8 +282,8 @@ def test(data,
 
                 test_date = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
                 sheet.append([test_date, yaml_file.replace("\\", "/").split("/")[-1].split(".")[-2],
-                              "{:.2f}%".format(p * 100), "{:.2f}%".format(r * 100),
-                              "{:.2f}%".format(map50 * 100), "{:.2f}%".format(map * 100), "{:.1f}".format(t[2]),
+                              "{:.2f}%".format(p[0] * 100), "{:.2f}%".format(r[0] * 100),
+                              "{:.2f}%".format(ap50[0] * 100), "{:.2f}%".format(ap[0] * 100), "{:.1f}".format(t[2]),
                               str(model_parameters), opt.weights, opt.data])
 
                 # 保存更改

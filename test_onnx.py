@@ -97,7 +97,7 @@ def test_onnx(opt):
     names = data["names"]
 
     s = ('%20s' + '%12s' * 6) % ('Class', 'Images', 'Labels', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
-    p, r, f1, mp, mr, map50, map, t0, t1 = 0., 0., 0., 0., 0., 0., 0., 0., 0.
+    p, r, f1, mp, mr, map50, map, t0, t1 = [0.], [0.], 0., 0., 0., 0., 0., 0., 0.
 
     jdict, stats, ap, ap_class, wandb_images = [], [], [], [], []
     for batch_i, (img, targets, paths, shapes) in enumerate(tqdm(dataloader, desc=s)):
@@ -198,6 +198,7 @@ def test_onnx(opt):
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
         nt = np.bincount(stats[3].astype(np.int64), minlength=nc)  # number of targets per class
     else:
+        ap50, ap = [0.], [0.]
         nt = torch.zeros(1)
 
     # Print results
