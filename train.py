@@ -110,26 +110,26 @@ def train(hyp, opt, device, tb_writer=None):
     else:
         model = Model(cfg_path, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
 
-    # Save cfg file
+        # Save cfg file
 
-    cfg_folder = save_dir / 'cfg'
-    os.makedirs(cfg_folder)
-    if not os.path.exists(cfg_path):
-        cfg_path = cfg_path[:-6] + cfg_path[-5:]
-    shutil.copy(cfg_path, cfg_folder)
+        cfg_folder = save_dir / 'cfg'
+        os.makedirs(cfg_folder)
+        if not os.path.exists(cfg_path):
+            cfg_path = cfg_path[:-6] + cfg_path[-5:]
+        shutil.copy(cfg_path, cfg_folder)
 
-    cfg_backbone_folder = save_dir / 'cfg' / 'backbone'
-    os.makedirs(cfg_backbone_folder)
-    for backbone_path in model.backbone_path:
-        shutil.copy(backbone_path, cfg_backbone_folder)
-    cfg_neck_folder = save_dir / 'cfg' / 'neck'
-    os.makedirs(cfg_neck_folder)
-    for neck_path in model.neck_path:
-        shutil.copy(neck_path, cfg_neck_folder)
-    cfg_head_folder = save_dir / 'cfg' / 'head'
-    os.makedirs(cfg_head_folder)
-    for head_path in model.head_path:
-        shutil.copy(head_path, cfg_head_folder)
+        cfg_backbone_folder = save_dir / 'cfg' / 'backbone'
+        os.makedirs(cfg_backbone_folder)
+        for backbone_path in model.backbone_path:
+            shutil.copy(backbone_path, cfg_backbone_folder)
+        cfg_neck_folder = save_dir / 'cfg' / 'neck'
+        os.makedirs(cfg_neck_folder)
+        for neck_path in model.neck_path:
+            shutil.copy(neck_path, cfg_neck_folder)
+        cfg_head_folder = save_dir / 'cfg' / 'head'
+        os.makedirs(cfg_head_folder)
+        for head_path in model.head_path:
+            shutil.copy(head_path, cfg_head_folder)
 
 
     with torch_distributed_zero_first(rank):
