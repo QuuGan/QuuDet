@@ -375,7 +375,7 @@ def train(hyp, opt, device, tb_writer=None):
                 f'Logging results to {save_dir}\n'
                 f'Starting training for {epochs} epochs...')
     torch.save(model, wdir / 'init.pt')
-    if not opt.valeach:
+    if opt.novaleach:
         val_epochs = list(range(int(epochs / 8), epochs + 1, 8))
         val_epochs += list(range(int(epochs / 4), epochs + 1, 4))
         val_epochs += list(range(int(epochs / 2), epochs + 1, 2))
@@ -687,7 +687,7 @@ if __name__ == '__main__':
     parser.add_argument('--clear', action='store_true', help='start train from 0 epoch')
     parser.add_argument('--notonlybest', action='store_true', help='not only save best and last')
     parser.add_argument('--nosave', action='store_true', help='only save final checkpoint')
-    parser.add_argument('--valeach', action='store_true', help='Verify each epoch')
+    parser.add_argument('--novaleach', action='store_true', help='not Verify each epoch')
     parser.add_argument('--notest', action='store_true', help='only test final epoch')
     parser.add_argument('--earlystop', type=int, default=50, help='early stop if best model is not updated in times')
     parser.add_argument('--noautoanchor', action='store_true', help='disable autoanchor check')
