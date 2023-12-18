@@ -110,26 +110,26 @@ def train(hyp, opt, device, tb_writer=None):
     else:
         model = Model(cfg_path, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
 
-        # Save cfg file
+    # Save cfg file
 
-        cfg_folder = save_dir / 'cfg'
-        os.makedirs(cfg_folder)
-        if not os.path.exists(cfg_path):
-            cfg_path = cfg_path[:-6] + cfg_path[-5:]
-        shutil.copy(cfg_path, cfg_folder)
+    cfg_folder = save_dir / 'cfg'
+    os.makedirs(cfg_folder)
+    if not os.path.exists(cfg_path):
+        cfg_path = cfg_path[:-6] + cfg_path[-5:]
+    shutil.copy(cfg_path, cfg_folder)
 
-        cfg_backbone_folder = save_dir / 'cfg' / 'backbone'
-        os.makedirs(cfg_backbone_folder)
-        for backbone_path in model.backbone_path:
-            shutil.copy(backbone_path, cfg_backbone_folder)
-        cfg_neck_folder = save_dir / 'cfg' / 'neck'
-        os.makedirs(cfg_neck_folder)
-        for neck_path in model.neck_path:
-            shutil.copy(neck_path, cfg_neck_folder)
-        cfg_head_folder = save_dir / 'cfg' / 'head'
-        os.makedirs(cfg_head_folder)
-        for head_path in model.head_path:
-            shutil.copy(head_path, cfg_head_folder)
+    cfg_backbone_folder = save_dir / 'cfg' / 'backbone'
+    os.makedirs(cfg_backbone_folder)
+    for backbone_path in model.backbone_path:
+        shutil.copy(backbone_path, cfg_backbone_folder)
+    cfg_neck_folder = save_dir / 'cfg' / 'neck'
+    os.makedirs(cfg_neck_folder)
+    for neck_path in model.neck_path:
+        shutil.copy(neck_path, cfg_neck_folder)
+    cfg_head_folder = save_dir / 'cfg' / 'head'
+    os.makedirs(cfg_head_folder)
+    for head_path in model.head_path:
+        shutil.copy(head_path, cfg_head_folder)
 
 
     with torch_distributed_zero_first(rank):
@@ -230,6 +230,8 @@ def train(hyp, opt, device, tb_writer=None):
 
     if opt.adam:
         optimizer = optim.Adam(pg0, lr=hyp['lr0'], betas=(hyp['momentum'], 0.999))  # adjust beta1 to momentum
+    elif opt.adamW:
+        optimizer = optim.AdamW(pg0, lr=hyp['lr0'], betas=(hyp['momentum'], 0.999))  # adjust beta1 to momentum
     else:
         optimizer = optim.SGD(pg0, lr=hyp['lr0'], momentum=hyp['momentum'], nesterov=True)
 
@@ -373,14 +375,14 @@ def train(hyp, opt, device, tb_writer=None):
                 f'Logging results to {save_dir}\n'
                 f'Starting training for {epochs} epochs...')
     torch.save(model, wdir / 'init.pt')
-    if opt.autoval:
+    if not opt.valeach:
         val_epochs = list(range(int(epochs / 8), epochs + 1, 8))
         val_epochs += list(range(int(epochs / 4), epochs + 1, 4))
         val_epochs += list(range(int(epochs / 2), epochs + 1, 2))
         val_epochs += list(range(int(epochs / 1.1), epochs + 1, 1))
     else:
         val_epochs = list(range(epochs + 1))
-
+    not_best_count = 0
     for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
         model.train()
 
@@ -585,6 +587,7 @@ def train(hyp, opt, device, tb_writer=None):
             wandb_logger.end_epoch(best_result=best_fitness == fi)
 
             # Save model
+            not_best_count = not_best_count + 1
             if ((not opt.nosave) or (final_epoch and not opt.evolve)) and epoch in val_epochs:  # if save
                 ckpt = {'epoch': epoch,
                         'best_fitness': best_fitness,
@@ -599,6 +602,10 @@ def train(hyp, opt, device, tb_writer=None):
                 torch.save(ckpt, last)
                 if best_fitness == fi:
                     torch.save(ckpt, best)
+                    not_best_count = 0
+                if not_best_count > opt.earlystop:
+                    logger.info('stop early in epoch: ' + str(epoch) + '\n')
+                    break
                 if opt.notonlybest:
                     if (best_fitness == fi) and (epoch >= 200):
                         torch.save(ckpt, wdir / 'best_{:03d}.pt'.format(epoch))
@@ -680,8 +687,9 @@ if __name__ == '__main__':
     parser.add_argument('--clear', action='store_true', help='start train from 0 epoch')
     parser.add_argument('--notonlybest', action='store_true', help='not only save best and last')
     parser.add_argument('--nosave', action='store_true', help='only save final checkpoint')
-    parser.add_argument('--autoval', action='store_true', help='Control the number of validation based on epoch')
+    parser.add_argument('--valeach', action='store_true', help='Verify each epoch')
     parser.add_argument('--notest', action='store_true', help='only test final epoch')
+    parser.add_argument('--earlystop', type=int, default=50, help='early stop if best model is not updated in times')
     parser.add_argument('--noautoanchor', action='store_true', help='disable autoanchor check')
     parser.add_argument('--evolve', action='store_true', help='evolve hyperparameters')
     parser.add_argument('--bucket', type=str, default='', help='gsutil bucket')
@@ -691,6 +699,7 @@ if __name__ == '__main__':
     parser.add_argument('--multi-scale', action='store_true', help='vary img-size +/- 50%%')
     parser.add_argument('--single-cls', action='store_true', help='train multi-class data as single-class')
     parser.add_argument('--adam', action='store_true', help='use torch.optim.Adam() optimizer')
+    parser.add_argument('--adamW', action='store_true', help='use torch.optim.AdamW() optimizer')
     parser.add_argument('--sync-bn', action='store_true', help='use SyncBatchNorm, only available in DDP mode')
     parser.add_argument('--local_rank', type=int, default=-1, help='DDP parameter, do not modify')
     parser.add_argument('--workers', type=int, default=8, help='maximum number of dataloader workers')

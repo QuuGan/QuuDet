@@ -71,7 +71,7 @@ def test_onnx(opt):
 
     # Directories
     save_dir = Path(increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok))  # increment run
-    (save_dir / save_dir).mkdir(parents=True, exist_ok=True)  # make dir
+    save_dir.mkdir(parents=True, exist_ok=True)  # make dir
     with open(save_dir / 'opt.yaml', 'w') as f:
         yaml.dump(vars(opt), f, sort_keys=False)
     gs = 32
