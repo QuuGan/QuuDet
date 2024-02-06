@@ -59,6 +59,9 @@ def test_onnx(opt):
     input_names = [model_inputs[i].name for i in range(len(model_inputs))]
     input_shape = model_inputs[0].shape
     batch_size = input_shape[0]
+    if not isinstance(batch_size,int):
+        batch_size = opt.batch_size
+
     img_size_height =  input_shape[2]
     img_size = img_size_width =  input_shape[3]
 
@@ -248,6 +251,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='test_onnx.py')
     parser.add_argument('--weights', type=str, default='', help='model.onnx path(s)')
     parser.add_argument('--data', type=str, default='', help='*.data path')
+    parser.add_argument('--batch-size', type=int, default=1, help='dynamic onnx model need set')
     parser.add_argument('--conf-thres', type=float, default=0.005, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.5, help='IOU threshold for NMS')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
