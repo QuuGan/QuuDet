@@ -209,7 +209,8 @@ python test.py  --weights runs/train/exp1/weights/best.pt --source inference/ima
  ## 导出onnx模型
 
 ### 导出配置
-* --weights为模型的路径，不可为空。  
+* --weights为模型的路径，不可为空。
+* --dynamic-batch 可导出动态批次的模型。
 ``` shell
 # 可带参数运行导出命令
 python export.py  --weights runs/train/exp1/weights/best.pt   
@@ -222,6 +223,7 @@ python export.py  --weights runs/train/exp1/weights/best.pt
 * --weights为模型的路径，不可为空。  
 * --data为模型的路径，不可为空。 
 * --darknet表示darknet的模型
+* --batch-size动态模型可设置批次数
 ``` shell
 # 可带参数运行导出命令
 python test_onnx.py  --weights runs/train/exp1/weights/best.onnx --data data/voc.yaml
