@@ -217,6 +217,7 @@ python detect.py  --weights runs/train/exp1/weights/best.pt --source inference/i
 ### Export Configuration
 * In the main function of export.py, default parameters can be configured. 
 * --weights is the path to the model, which must be specified.
+* --dynamic-batch can export dynamic batches 
 ``` shell
 # Run export command with optional parameters
 python export.py  --weights runs/train/exp1/weights/best.pt   
@@ -230,6 +231,7 @@ python export.py  --weights runs/train/exp1/weights/best.pt
 * --weights is the path to the model, which cannot be empty.
 * --data is the path to the model's data, which cannot be empty.
 * --darknet indicates a Darknet model.
+* --batch-size set batch for dynamic onnx model
 ``` shell
 # You can run the export command with parameters
 python test_onnx.py --weights runs/train/exp1/weights/best.onnx --data data/voc.yaml
