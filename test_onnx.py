@@ -251,7 +251,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='test_onnx.py')
     parser.add_argument('--weights', type=str, default='', help='model.onnx path(s)')
     parser.add_argument('--data', type=str, default='', help='*.data path')
-    parser.add_argument('--batch-size', type=int, default=1, help='dynamic onnx model need set')
+    parser.add_argument('--batch-size', type=int, default=16, help='dynamic onnx model need set')
     parser.add_argument('--conf-thres', type=float, default=0.005, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.5, help='IOU threshold for NMS')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')

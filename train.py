@@ -285,7 +285,7 @@ def train(hyp, opt, device, tb_writer=None):
 
     # Image sizes
     gs = max(int(model.stride.max()), 32)  # grid size (max stride)
-    imgsz, imgsz_test = [check_img_size(x, gs) for x in opt.img_size]  # verify imgsz are gs-multiples
+    imgsz=imgsz_test =check_img_size(opt.img_size, gs)  # verify imgsz are gs-multiples
 
     # DP mode
     if cuda and rank == -1 and torch.cuda.device_count() > 1:
@@ -338,6 +338,8 @@ def train(hyp, opt, device, tb_writer=None):
     nl = model.model[-1].nl  # number of detection layers (used for scaling hyp['obj'])
     hyp['box'] *= 3. / nl  # scale to layers
     hyp['cls'] *= nc / 80. * 3. / nl  # scale to classes and layers
+    if isinstance(imgsz,tuple):
+        imgsz = imgsz[0]
     hyp['obj'] *= (imgsz / 640) ** 2 * 3. / nl  # scale to image size and layers
     hyp['label_smoothing'] = opt.label_smoothing
     model.nc = nc  # attach number of classes to model
@@ -518,9 +520,12 @@ def train(hyp, opt, device, tb_writer=None):
             if rank in [-1, 0]:
                 for loss_items in loss_items_list:
                     mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
+                    show_img_size = opt.img_size
+                    if isinstance(show_img_size,tuple):
+                        show_img_size = '%gx%g'%(show_img_size[0],show_img_size[1])
                     mem = '%.3gG' % (torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0)  # (GB)
-                    s = ('%10s' * 2 + '%10.4g' * 6) % (
-                        '%g/%g' % (epoch, epochs - 1), mem, *mloss, targets.shape[0], imgs.shape[-1])
+                    s = ('%10s' * 2 + '%10.4g' * 5+'  %s') % (
+                        '%g/%g' % (epoch, epochs - 1), mem, *mloss, targets.shape[0],str(show_img_size))
                     pbar.set_description(s)
 
                 # Plot
@@ -677,7 +682,7 @@ if __name__ == '__main__':
     parser.add_argument('--hyp', type=str, default='data/hyp.yaml', help='hyperparameters path')
     parser.add_argument('--epochs', type=int, default=300)
     parser.add_argument('--batch-size', type=int, default=16, help='total batch size for all GPUs')
-    parser.add_argument('--img-size', nargs='+', type=int, default=[640, 640], help='[train, test] image sizes')
+    parser.add_argument('--img-size', nargs='+', type=int, default=(640,640), help='(height,width)')
     parser.add_argument('--conf-thres', type=float, default=0.005, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.5, help='IOU threshold for NMS')
     parser.add_argument('--rect', action='store_true', help='rectangular training')
@@ -741,7 +746,7 @@ if __name__ == '__main__':
         # opt.hyp = opt.hyp or ('hyp.finetune.yaml' if opt.weights else 'hyp.scratch.yaml')
         opt.data, opt.cfg, opt.hyp = check_file(opt.data), check_file(opt.cfg), check_file(opt.hyp)  # check files
         assert len(opt.cfg) or len(opt.weights), 'either --cfg or --weights must be specified'
-        opt.img_size.extend([opt.img_size[-1]] * (2 - len(opt.img_size)))  # extend to 2 sizes (train, test)
+        #opt.img_size.extend([opt.img_size[-1]] * (2 - len(opt.img_size)))  # extend to 2 sizes (train, test)
         opt.name = 'evolve' if opt.evolve else opt.name
         opt.save_dir = increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok | opt.evolve)  # increment run
 

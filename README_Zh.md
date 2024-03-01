@@ -209,8 +209,7 @@ python test.py  --weights runs/train/exp1/weights/best.pt --source inference/ima
  ## 导出onnx模型
 
 ### 导出配置
-* --weights为模型的路径，不可为空。
-* --dynamic-batch 可导出动态批次的模型。
+* --weights为模型的路径，不可为空。  
 ``` shell
 # 可带参数运行导出命令
 python export.py  --weights runs/train/exp1/weights/best.pt   
@@ -223,7 +222,6 @@ python export.py  --weights runs/train/exp1/weights/best.pt
 * --weights为模型的路径，不可为空。  
 * --data为模型的路径，不可为空。 
 * --darknet表示darknet的模型
-* --batch-size动态模型可设置批次数
 ``` shell
 # 可带参数运行导出命令
 python test_onnx.py  --weights runs/train/exp1/weights/best.onnx --data data/voc.yaml
@@ -291,6 +289,84 @@ python test_seg.py --weights runs/train_seg/exp/weights/best.pt --cfg cfg/model/
 python detect_seg.py  --weights runs/train_seg/exp/weights/best.pt --cfg cfg/model/unet-yk-sdp.yaml --source inference/images 
 ```
 * 检测结果保存在runs/detect_seg/exp*/目录下。
+
+
+# 图像分类
+
+## 训练
+
+### 数据准备 
+* 数据集包含文件夹train和test，其内部是每个分类的文件夹，文件夹以分类对象的名称命名，包含该分类的图片。
+``` 
+dataset_name-/
+|
+|-- train/
+|   |-- dog/
+|   |   |-- 1.png
+|   |   |-- 2.png
+|   |   |-- ...
+|   |
+|   |-- cat/
+|   |   |-- 1.png
+|   |   |-- 2.png
+|   |   |-- ...
+|   |
+|   |-- ...
+|
+|-- test/
+|   |-- dog/
+|   |   |-- 1.png
+|   |   |-- 2.png
+|   |   |-- ...
+|   |
+|   |-- cat/
+|   |   |-- 1.png
+|   |   |-- 2.png
+|   |   |-- ...
+|   |
+|   |-- ...
+```
+ 
+
+### 训练配置
+
+* --weights为预训练模型的路径，可为空。
+* --cfg为指定网络模型配置文件所在的路径，例如使用“cfg/model/yolov8-cls.yaml“,可添加后缀例如"yolov8n-cls.yaml"。
+* --data为数据集文件夹所在的路径，不可为空，例如”data/dataset_name“。 
+* --epoch为训练的轮数。
+* --batch-size为训练时，每一批传入图片的数量，需按照显存大小进行设定。
+* --
+ 
+* 
+``` shell
+# 可带参数运行训练命令
+python train_cls.py --cfg cfg/model/yolov8-cls.yaml --data data/dataset_name --epoch 10 --batch-size 16 
+```
+
+* 训练结果将会保存在runs/train_cls/exp*/目录下，主要包含了训练的产生的模型和训练过程中所记录的数值。
+
+ ## 测试
+### 测试配置
+* --weights为模型的路径，不可为空。 
+* --data为数据配置文件所在的路径，不可为空。  
+``` shell
+# 可带参数运行检测命令
+python test_cls.py --weights runs/train_cls/exp/weights/best.pt --data data/dataset_name 
+```
+* 测试完成后在控制台输出结果，包含top1_acc，top5_acc等指标，
+* 测试结果保存在runs/test_cls/exp*/目录下。
+
+
+ ## 检测 
+### 检测配置
+* --weights为模型的路径，不可为空。 
+ * --source为需要检测的图片文件所在的路径。  
+``` shell
+# 可带参数运行检测命令
+python detect_cls.py  --weights runs/train_cls/exp/weights/best.pt --source data/1.jpg
+```
+* 检测结果保存在runs/detect_cls/exp*/目录下。
+
 
 
 ## 参考项目

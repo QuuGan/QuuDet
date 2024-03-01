@@ -217,7 +217,6 @@ python detect.py  --weights runs/train/exp1/weights/best.pt --source inference/i
 ### Export Configuration
 * In the main function of export.py, default parameters can be configured. 
 * --weights is the path to the model, which must be specified.
-* --dynamic-batch can export dynamic batches 
 ``` shell
 # Run export command with optional parameters
 python export.py  --weights runs/train/exp1/weights/best.pt   
@@ -231,7 +230,6 @@ python export.py  --weights runs/train/exp1/weights/best.pt
 * --weights is the path to the model, which cannot be empty.
 * --data is the path to the model's data, which cannot be empty.
 * --darknet indicates a Darknet model.
-* --batch-size set batch for dynamic onnx model
 ``` shell
 # You can run the export command with parameters
 python test_onnx.py --weights runs/train/exp1/weights/best.onnx --data data/voc.yaml
@@ -300,6 +298,89 @@ python detect_seg.py  --weights runs/train_seg/exp/weights/best.pt --cfg cfg/mod
 
 
 
+
+
+
+
+# Image Classification
+
+## Training
+
+### Data Preparation
+* The dataset contains folders named "train" and "test". Inside these folders are folders named by the classification objects, which contain images of that classification.
+``` 
+dataset_name-/
+|
+|-- train/
+|   |-- dog/
+|   |   |-- 1.png
+|   |   |-- 2.png
+|   |   |-- ...
+|   |
+|   |-- cat/
+|   |   |-- 1.png
+|   |   |-- 2.png
+|   |   |-- ...
+|   |
+|   |-- ...
+|
+|-- test/
+|   |-- dog/
+|   |   |-- 1.png
+|   |   |-- 2.png
+|   |   |-- ...
+|   |
+|   |-- cat/
+|   |   |-- 1.png
+|   |   |-- 2.png
+|   |   |-- ...
+|   |
+|   |-- ...
+```
+
+ 
+
+###  Training Configuration
+
+* --weights is the path to the pre-trained model, which can be left empty.
+* --cfg is the path to the configuration file of the specified network model, such as using "cfg/model/yolov8-cls.yaml", can add scale ,such as use 'yolov8n-cls.yaml' will call yolov8-cls.yaml with scale 'n'..
+* --data is the path to the dataset folder, which cannot be left empty, for example, "data/dataset_name".
+* --epoch is the number of training rounds.
+* --batch-size is the number of images in each batch during training, which should be set based on the available GPU memory.
+
+ 
+
+``` shell
+# Run the training command with parameters  
+python train_cls.py --cfg cfg/model/yolov8-cls.yaml --data data/dataset_name --epoch 10 --batch-size 16 
+```
+
+* The training results will be saved in the "runs/train_cls/exp*/" directory, mainly including the trained model and the numerical values recorded during the training process.
+
+
+ ##  Testing
+### Testing Configuration 
+* --weights is the path to the model, which cannot be left empty. 
+* --data is the path to the data configuration file, which cannot be left empty.
+``` shell
+# Run the detection command with parameters  
+python test_cls.py --weights runs/train_cls/exp/weights/best.pt --data data/dataset_name 
+```
+ 
+* After the test is completed, the results will be output in the console, including indicators such as top1_acc, top5_acc, etc.
+* The test results will be saved in the "runs/test_cls/exp*/" directory.
+
+ ## Detection
+### Detection Configuration 
+ * --weights is the path to the model, which cannot be left empty.
+
+ * --source is the path to the image file that needs to be detected.
+``` shell
+# Run the detection command with parameters 
+python detect_cls.py  --weights runs/train_cls/exp/weights/best.pt --source data/1.jpg
+```
+* The detection results will be saved in the "runs/detect_cls/exp*/" directory. 
+ 
 ## Reference Projects
 <details><summary> <b>Expand</b> </summary>
 

@@ -62,8 +62,9 @@ def detect(save_img=False):
 
     # Run inference
     if device.type != 'cpu':
-        model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model.parameters())))  # run once
-    old_img_w = old_img_h = imgsz
+        model(torch.zeros(1, 3, imgsz[0], imgsz[1]).to(device).type_as(next(model.parameters())))  # run once
+    old_img_w = imgsz[0]
+    old_img_h = imgsz[1]
     old_img_b = 1
 
     t0 = time.time()
@@ -175,7 +176,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', nargs='+', type=str, default='', help='model.pt path(s)')
     parser.add_argument('--source', type=str, default='', help='source')  # file/folder, 0 for webcam
-    parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
+    parser.add_argument('--img-size', type=int, default=(640,640), help='height,width')
     parser.add_argument('--conf-thres', type=float, default=0.5, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.5, help='IOU threshold for NMS')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
