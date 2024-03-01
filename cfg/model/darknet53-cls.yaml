@@ -1,0 +1,15 @@
+# darknet53
+model:
+  backbone:
+    name: yolov3-backbone
+  head: classify-head
+
+
+
+
+
+
+
+
+
+
