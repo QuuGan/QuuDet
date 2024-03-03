@@ -484,3 +484,37 @@ def plot_skeleton_kpts(im, kpts, steps, orig_shape=None):
         if pos2[0] % 640 == 0 or pos2[1] % 640 == 0 or pos2[0]<0 or pos2[1]<0:
             continue
         cv2.line(im, pos1, pos2, (int(r), int(g), int(b)), thickness=2)
+
+IMAGENET_MEAN = 0.485, 0.456, 0.406  # RGB mean
+IMAGENET_STD = 0.229, 0.224, 0.225  # RGB standard deviation
+def denormalize(x, mean=IMAGENET_MEAN, std=IMAGENET_STD):
+    # Denormalize RGB images x per ImageNet stats in BCHW format, i.e. = x * std + mean
+    for i in range(3):
+        x[:, i] = x[:, i] * std[i] + mean[i]
+    return x
+def imshow_cls(im, labels=None, pred=None, names=None, nmax=25, verbose=False, f=Path('images.jpg')):
+    # Show classification image grid with labels (optional) and predictions (optional)
+
+    names = names or [f'class{i}' for i in range(1000)]
+    blocks = torch.chunk(denormalize(im.clone()).cpu().float(), len(im),
+                         dim=0)  # select batch index 0, block by channels
+    n = min(len(blocks), nmax)  # number of plots
+    m = min(8, round(n ** 0.5))  # 8 x 8 default
+    fig, ax = plt.subplots(math.ceil(n / m), m)  # 8 rows x n/8 cols
+    ax = ax.ravel() if m > 1 else [ax]
+    # plt.subplots_adjust(wspace=0.05, hspace=0.05)
+    for i in range(n):
+        ax[i].imshow(blocks[i].squeeze().permute((1, 2, 0)).numpy().clip(0.0, 1.0))
+        ax[i].axis('off')
+        if labels is not None:
+            s = names[labels[i]] + (f'—{names[pred[i]]}' if pred is not None else '')
+            ax[i].set_title(s, fontsize=8, verticalalignment='top')
+    plt.savefig(f, dpi=300, bbox_inches='tight')
+    plt.close()
+    if verbose:
+        print(f"Saving {f}")
+        if labels is not None:
+            print('True:     ' + ' '.join(f'{names[i]:3s}' for i in labels[:nmax]))
+        if pred is not None:
+            print('Predicted:' + ' '.join(f'{names[i]:3s}' for i in pred[:nmax]))
+    return f

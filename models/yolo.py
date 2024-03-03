@@ -139,6 +139,22 @@ class Detect(nn.Module):
         box @= convert_matrix
         return (box, score)
 
+class Classify(nn.Module):
+    def __init__(self, c1, c2, k=1, s=1, p=None, g=1):  # ch_in, ch_out, kernel, stride, padding, groups
+        super().__init__()
+        c_ = 1280  # efficientnet_b0 size
+        self.conv = Conv(c1, c_, k, s, p, g)
+        self.pool = nn.AdaptiveAvgPool2d(1)  # to x(b,c_,1,1)
+        self.drop = nn.Dropout(p=0.0, inplace=True)
+        self.linear = nn.Linear(c_, c2)  # to x(b,c2)
+
+    def forward(self, x):
+        """Performs a forward pass of the YOLO model on input image data."""
+        if isinstance(x, list):
+            x = torch.cat(x, 1)
+        x = self.linear(self.drop(self.pool(self.conv(x)).flatten(1)))
+        return x if self.training else x.softmax(1)
+
 class DetectAnchorFree(nn.Module):
     """YOLOv8 Detect head for detection models."""
     dynamic = False  # force grid reconstruction
@@ -147,7 +163,7 @@ class DetectAnchorFree(nn.Module):
     anchors = torch.empty(0)  # init
     strides = torch.empty(0)  # init
 
-    def __init__(self, nc=80, ch=()):  # detection layer
+    def __init__(self, nc=80, ch=(), only_classification=False):  # detection layer
         super().__init__()
         self.nc = nc  # number of classes
         self.nl = len(ch)  # number of detection layers
@@ -160,12 +176,16 @@ class DetectAnchorFree(nn.Module):
         self.cv3 = nn.ModuleList(nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3), nn.Conv2d(c3, self.nc, 1)) for x in ch)
         self.dfl = DFL(self.reg_max) if self.reg_max > 1 else nn.Identity()
         self.anchors = None
+        self.only_classification = only_classification
 
     def forward(self, x):
         """Concatenates and returns predicted bounding boxes and class probabilities."""
         shape = x[0].shape  # BCHW
         for i in range(self.nl):
-            x[i] = torch.cat((self.cv2[i](x[i]), self.cv3[i](x[i])), 1)
+            if self.only_classification:
+                x[i] = self.cv3[i](x[i])
+            else:
+                x[i] = torch.cat((self.cv2[i](x[i]), self.cv3[i](x[i])), 1)
         if self.training:
             return x
         elif self.dynamic or self.shape != shape:
@@ -746,8 +766,12 @@ class Model(nn.Module):
             self.yaml_file = Path(cfg).name
 
             if not os.path.exists(cfg):
-                scale = cfg[-6]
-                cfg = cfg[:-6] + cfg[-5:]
+                if "-cls" in cfg:
+                    scale = cfg[-10]
+                    cfg = cfg[:-10] + cfg[-9:]
+                else:
+                    scale = cfg[-6]
+                    cfg = cfg[:-6] + cfg[-5:]
             with open(cfg) as f:
                 self.yaml = yaml.load(f, Loader=yaml.SafeLoader)  # model dict
                 self.yaml['scale'] = scale
@@ -856,8 +880,7 @@ class Model(nn.Module):
                 head_dict = yaml.load(f, Loader=yaml.SafeLoader)
                 if 'loss_funtion' in head_dict:
                     self.loss_funtion.append(head_dict['loss_funtion'])
-                else:
-                    self.loss_funtion.append(loss_funtion)
+
 
                 if 'anchors' not in head_dict:
                     anchors = []
@@ -1236,6 +1259,11 @@ def build_model(layers,d,inch,in_layer,nc,anchors,act,scales=None):  # model_dic
             c2 = ch[f] * args[0] ** 2
         elif m is Expand:
             c2 = ch[f] // args[0] ** 2
+        elif m is Classify:
+            c1 = ch[f[0]]
+            c2 = args[0]
+            args[0] = c1
+            args.append(c2)
         else:
             c2 = ch[f]
         m_ = nn.Sequential(*[m(*args) for _ in range(n)]) if n > 1 else m(*args)  # module
@@ -1255,11 +1283,11 @@ def build_model(layers,d,inch,in_layer,nc,anchors,act,scales=None):  # model_dic
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='../cfg/model/yolov4m.yaml', help='model.yaml')
+    parser.add_argument('--cfg', type=str, default='../cfg/model/yolov8n-cls.yaml', help='model.yaml')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--profile', action='store_false', help='profile model speed')
     opt = parser.parse_args()
-    opt.cfg = check_file(opt.cfg)  # check file
+    #opt.cfg = check_file(opt.cfg)  # check file
     set_logging()
     device = select_device(opt.device)
 
