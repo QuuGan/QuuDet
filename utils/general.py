@@ -120,9 +120,15 @@ def check_requirements(requirements='requirements.txt', exclude=()):
 
 def check_img_size(img_size, s=32):
     # Verify img_size is a multiple of stride s
-    new_size = make_divisible(img_size, int(s))  # ceil gs-multiple
-    if new_size != img_size:
-        print('WARNING: --img-size %g must be multiple of max stride %g, updating to %g' % (img_size, s, new_size))
+    if isinstance(img_size,tuple):
+        result_size = []
+        for img_size_item in img_size:
+            result_size.append(check_img_size(img_size_item,s))
+        return tuple(result_size)
+    else:
+        new_size = make_divisible(img_size, int(s))  # ceil gs-multiple
+        if new_size != img_size:
+            print('WARNING: --img-size %g must be multiple of max stride %g, updating to %g' % (img_size, s, new_size))
     return new_size
 
 

@@ -366,7 +366,11 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         self.image_weights = image_weights
         self.rect = False if image_weights else rect
         self.mosaic = self.augment and not self.rect  # load 4 images at a time into a mosaic (only during training)
-        if self.mosaic:self.mosaic_border = [-img_size // 2, -img_size // 2]
+        if self.mosaic:
+            if isinstance(img_size,tuple) or isinstance(img_size,tuple) :
+                self.mosaic_border = [-img_size[0] // 2, -img_size[1] // 2]
+            else:
+                self.mosaic_border = [-img_size // 2, -img_size // 2]
         self.stride = stride
         self.path = path
         self.mixup = True
@@ -728,6 +732,8 @@ def load_mosaic(self, index):
 
     labels4, segments4 = [], []
     s = self.img_size
+    if isinstance(s,tuple):
+        s = s[0]
     yc, xc = [int(random.uniform(-x, 2 * s + x)) for x in self.mosaic_border]  # mosaic center x, y
     indices = [index] + random.choices(self.indices, k=3)  # 3 additional image indices
     for i, index in enumerate(indices):
@@ -787,6 +793,8 @@ def load_mosaic9(self, index):
 
     labels9, segments9 = [], []
     s = self.img_size
+    if isinstance(s,tuple):
+        s = s[0]
     indices = [index] + random.choices(self.indices, k=8)  # 8 additional image indices
     for i, index in enumerate(indices):
         # Load image
@@ -863,6 +871,8 @@ def load_samples(self, index):
 
     labels4, segments4 = [], []
     s = self.img_size
+    if isinstance(s,tuple):
+        s = s[0]
     yc, xc = [int(random.uniform(-x, 2 * s + x)) for x in self.mosaic_border]  # mosaic center x, y
     indices = [index] + random.choices(self.indices, k=3)  # 3 additional image indices
     for i, index in enumerate(indices):
