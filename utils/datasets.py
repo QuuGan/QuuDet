@@ -732,8 +732,11 @@ def load_mosaic(self, index):
 
     labels4, segments4 = [], []
     s = self.img_size
-    if isinstance(s,tuple):
-        s = s[0]
+    if isinstance(s,tuple) or isinstance(s,list):
+        xs = s[0]
+        if s[0] < s[1]:
+            xs = s[1]
+        s = xs
     yc, xc = [int(random.uniform(-x, 2 * s + x)) for x in self.mosaic_border]  # mosaic center x, y
     indices = [index] + random.choices(self.indices, k=3)  # 3 additional image indices
     for i, index in enumerate(indices):
@@ -793,8 +796,11 @@ def load_mosaic9(self, index):
 
     labels9, segments9 = [], []
     s = self.img_size
-    if isinstance(s,tuple):
-        s = s[0]
+    if isinstance(s,tuple) or isinstance(s,list):
+        xs = s[0]
+        if s[0] < s[1]:
+            xs = s[1]
+        s = xs
     indices = [index] + random.choices(self.indices, k=8)  # 8 additional image indices
     for i, index in enumerate(indices):
         # Load image
