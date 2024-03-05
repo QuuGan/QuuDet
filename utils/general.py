@@ -120,7 +120,7 @@ def check_requirements(requirements='requirements.txt', exclude=()):
 
 def check_img_size(img_size, s=32):
     # Verify img_size is a multiple of stride s
-    if isinstance(img_size,tuple):
+    if isinstance(img_size,tuple) or isinstance(img_size,list):
         result_size = []
         for img_size_item in img_size:
             result_size.append(check_img_size(img_size_item,s))
