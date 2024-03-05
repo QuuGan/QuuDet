@@ -682,7 +682,7 @@ if __name__ == '__main__':
     parser.add_argument('--hyp', type=str, default='data/hyp.yaml', help='hyperparameters path')
     parser.add_argument('--epochs', type=int, default=300)
     parser.add_argument('--batch-size', type=int, default=16, help='total batch size for all GPUs')
-    parser.add_argument('--img-size', nargs='+', type=int, default=(640,640), help='(height,width)')
+    parser.add_argument('--img-size', nargs='+', type=int, default=[640,640], help='(height,width)')
     parser.add_argument('--conf-thres', type=float, default=0.005, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.5, help='IOU threshold for NMS')
     parser.add_argument('--rect', action='store_true', help='rectangular training')
