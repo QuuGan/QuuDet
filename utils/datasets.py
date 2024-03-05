@@ -367,8 +367,10 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         self.rect = False if image_weights else rect
         self.mosaic = self.augment and not self.rect  # load 4 images at a time into a mosaic (only during training)
         if self.mosaic:
-            if isinstance(img_size,tuple) or isinstance(img_size,tuple) :
+            if isinstance(img_size,list) and len(img_size)>1:
                 self.mosaic_border = [-img_size[0] // 2, -img_size[1] // 2]
+            elif isinstance(img_size,tuple):
+                self.mosaic_border = [-img_size[0] // 2, -img_size[0] // 2]
             else:
                 self.mosaic_border = [-img_size // 2, -img_size // 2]
         self.stride = stride
@@ -690,10 +692,10 @@ def load_image(self, index):
         assert img is not None, 'Image Not Found ' + path
         h0, w0 = img.shape[:2]  # orig hw
 
-        if isinstance(self.img_size, tuple):
+        if isinstance(self.img_size, list):
             img = cv2.resize(img, (self.img_size[1], self.img_size[0]), interpolation=cv2.INTER_LINEAR)
         else:
-            r = self.img_size / max(h0, w0)  # resize image to img_size
+            r = self.img_size[0] / max(h0, w0)  # resize image to img_size
             interp = cv2.INTER_AREA if r < 1 and not self.augment else cv2.INTER_LINEAR
             if r != 1:  # always resize down, only resize up if training with augmentation
                 img = cv2.resize(img, (int(w0 * r), int(h0 * r)), interpolation=interp)
@@ -734,7 +736,7 @@ def load_mosaic(self, index):
     s = self.img_size
     if isinstance(s,tuple) or isinstance(s,list):
         xs = s[0]
-        if s[0] < s[1]:
+        if len(s)>1 and s[0] < s[1] :
             xs = s[1]
         s = xs
     yc, xc = [int(random.uniform(-x, 2 * s + x)) for x in self.mosaic_border]  # mosaic center x, y
@@ -798,7 +800,7 @@ def load_mosaic9(self, index):
     s = self.img_size
     if isinstance(s,tuple) or isinstance(s,list):
         xs = s[0]
-        if s[0] < s[1]:
+        if len(s)>1 and s[0] < s[1] :
             xs = s[1]
         s = xs
     indices = [index] + random.choices(self.indices, k=8)  # 8 additional image indices
@@ -877,8 +879,11 @@ def load_samples(self, index):
 
     labels4, segments4 = [], []
     s = self.img_size
-    if isinstance(s,tuple):
-        s = s[0]
+    if isinstance(s,tuple) or isinstance(s,list):   
+        xs = s[0]
+        if len(s)>1 and s[0] < s[1] :
+            xs = s[1]
+        s = xs
     yc, xc = [int(random.uniform(-x, 2 * s + x)) for x in self.mosaic_border]  # mosaic center x, y
     indices = [index] + random.choices(self.indices, k=3)  # 3 additional image indices
     for i, index in enumerate(indices):
