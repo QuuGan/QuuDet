@@ -338,9 +338,11 @@ def train(hyp, opt, device, tb_writer=None):
     nl = model.model[-1].nl  # number of detection layers (used for scaling hyp['obj'])
     hyp['box'] *= 3. / nl  # scale to layers
     hyp['cls'] *= nc / 80. * 3. / nl  # scale to classes and layers
-    if isinstance(imgsz,tuple):
-        imgsz = imgsz[0]
-    hyp['obj'] *= (imgsz / 640) ** 2 * 3. / nl  # scale to image size and layers
+    if isinstance(imgsz,tuple) or isinstance(imgsz,list):
+        imgsz1 = imgsz[0]
+    else:
+        imgsz1 = imgsz
+    hyp['obj'] *= (imgsz1 / 640) ** 2 * 3. / nl  # scale to image size and layers
     hyp['label_smoothing'] = opt.label_smoothing
     model.nc = nc  # attach number of classes to model
     model.hyp = hyp  # attach hyperparameters to model
@@ -361,7 +363,7 @@ def train(hyp, opt, device, tb_writer=None):
         if model.loss_funtion[out_layer_index] == "TalOTA-anchor-free-loss":
             compute_loss = v8DetectionLoss(model, out_layer=out_layer)
         elif model.loss_funtion[out_layer_index] == "SimOTA-anchor-loss":
-            compute_loss = ComputeLossOTA(model, out_layer=out_layer, imgsz=imgsz)  # init loss class
+            compute_loss = ComputeLossOTA(model, out_layer=out_layer, imgsz=imgsz1)  # init loss class
 
         elif model.loss_funtion[out_layer_index] == "yolov1-loss":
             compute_loss = ComputeLossYOLOv1(model)  # init loss class
@@ -521,8 +523,10 @@ def train(hyp, opt, device, tb_writer=None):
                 for loss_items in loss_items_list:
                     mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
                     show_img_size = opt.img_size
-                    if isinstance(show_img_size,tuple):
+                    if  isinstance(show_img_size,list) and len(show_img_size)>1:
                         show_img_size = '%gx%g'%(show_img_size[0],show_img_size[1])
+                    else:
+                        show_img_size = show_img_size[0]
                     mem = '%.3gG' % (torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0)  # (GB)
                     s = ('%10s' * 2 + '%10.4g' * 5+'  %s') % (
                         '%g/%g' % (epoch, epochs - 1), mem, *mloss, targets.shape[0],str(show_img_size))

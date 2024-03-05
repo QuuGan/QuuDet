@@ -252,6 +252,8 @@ def test(data,
             txt_result.append(s)
 
     # Print speeds
+    if len(imgsz)==1:
+        imgsz = [imgsz[0],imgsz[0]]
     t = tuple(x / seen * 1E3 for x in (t0, t1, t0 + t1)) + (imgsz[0], imgsz[1], batch_size)  # tuple
     if not training:
         s = 'Speed: %.1f/%.1f/%.1f ms inference/NMS/total per %gx%g image at batch-size %g' % t
