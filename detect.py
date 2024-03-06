@@ -176,7 +176,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', nargs='+', type=str, default='', help='model.pt path(s)')
     parser.add_argument('--source', type=str, default='', help='source')  # file/folder, 0 for webcam
-    parser.add_argument('--img-size', type=int, default=(640,640), help='height,width')
+    parser.add_argument('--img-size', nargs='+', type=int, default=[640, 640], help='(height,width)')
     parser.add_argument('--conf-thres', type=float, default=0.5, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.5, help='IOU threshold for NMS')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')

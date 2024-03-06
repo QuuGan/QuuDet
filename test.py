@@ -68,7 +68,8 @@ def test(data,
 
         if trace:
             model = TracedModel(model, device, imgsz)
-
+    if len(imgsz)==1:
+        imgsz = [imgsz[0],imgsz[0]]
     # Half
     half = device.type != 'cpu' and half_precision  # half precision only supported on CUDA
     if half:
@@ -252,8 +253,7 @@ def test(data,
             txt_result.append(s)
 
     # Print speeds
-    if len(imgsz)==1:
-        imgsz = [imgsz[0],imgsz[0]]
+
     t = tuple(x / seen * 1E3 for x in (t0, t1, t0 + t1)) + (imgsz[0], imgsz[1], batch_size)  # tuple
     if not training:
         s = 'Speed: %.1f/%.1f/%.1f ms inference/NMS/total per %gx%g image at batch-size %g' % t
@@ -324,7 +324,7 @@ if __name__ == '__main__':
     parser.add_argument('--weights', type=str, default='', help='model.pt path(s)')
     parser.add_argument('--data', type=str, default='', help='*.data path')
     parser.add_argument('--batch-size', type=int, default=1, help='size of each image batch')
-    parser.add_argument('--img-size', type=int, default=(640,640), help='height,width')
+    parser.add_argument('--img-size', nargs='+', type=int, default=[640,640], help='height,width')
     parser.add_argument('--conf-thres', type=float, default=0.005, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.5, help='IOU threshold for NMS')
     parser.add_argument('--task', default='val', help='train, val, test, speed or study')
