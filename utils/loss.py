@@ -562,7 +562,7 @@ class ComputeLoss:
 
 class ComputeLossOTA:
     # Compute losses
-    def __init__(self, model, autobalance=False, out_layer=-1, imgsz=640):
+    def __init__(self, model, autobalance=False, out_layer=-1, imgsz=[640,640]):
         super(ComputeLossOTA, self).__init__()
         device = next(model.parameters()).device  # get model device
         h = model.hyp  # hyperparameters
@@ -666,7 +666,11 @@ class ComputeLossOTA:
             if this_target.shape[0] == 0:
                 continue
 
-            txywh = this_target[:, 2:6] * self.img_size
+
+            txywh = this_target.clone()[:, 2:6]
+            txywh[:, [0, 2]] *= self.img_size[1]
+            txywh[:, [1, 3]] *= self.img_size[0]
+
             txyxy = xywh2xyxy(txywh)
 
             pxyxys = []

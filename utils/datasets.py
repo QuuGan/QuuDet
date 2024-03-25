@@ -358,7 +358,7 @@ def img2label_paths(img_paths):
 
 
 class LoadImagesAndLabels(Dataset):  # for training/testing
-    def __init__(self, path, img_size=640, batch_size=16, augment=False, hyp=None, rect=False, image_weights=False,
+    def __init__(self, path, img_size=[640,640], batch_size=16, augment=False, hyp=None, rect=False, image_weights=False,
                  cache_images=False, single_cls=False, stride=32, pad=0.0, prefix=''):
         self.img_size = img_size
         self.augment = augment
@@ -366,13 +366,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         self.image_weights = image_weights
         self.rect = False if image_weights else rect
         self.mosaic = self.augment and not self.rect  # load 4 images at a time into a mosaic (only during training)
-        if self.mosaic:
-            if isinstance(img_size,list) and len(img_size)>1:
-                self.mosaic_border = [-img_size[0] // 2, -img_size[1] // 2]
-            elif isinstance(img_size,tuple):
-                self.mosaic_border = [-img_size[0] // 2, -img_size[0] // 2]
-            else:
-                self.mosaic_border = [-img_size // 2, -img_size // 2]
+        self.mosaic_border = [-img_size[0] // 2, -img_size[1] // 2]
         self.stride = stride
         self.path = path
         self.mixup = True
@@ -691,14 +685,11 @@ def load_image(self, index):
         img = cv2.imread(path)  # BGR
         assert img is not None, 'Image Not Found ' + path
         h0, w0 = img.shape[:2]  # orig hw
-
-        if isinstance(self.img_size, list):
-            img = cv2.resize(img, (self.img_size[1], self.img_size[0]), interpolation=cv2.INTER_LINEAR)
-        else:
-            r = self.img_size[0] / max(h0, w0)  # resize image to img_size
-            interp = cv2.INTER_AREA if r < 1 and not self.augment else cv2.INTER_LINEAR
-            if r != 1:  # always resize down, only resize up if training with augmentation
-                img = cv2.resize(img, (int(w0 * r), int(h0 * r)), interpolation=interp)
+        r_h = self.img_size[0] / h0  # resize image to img_size
+        r_w = self.img_size[1] / w0
+        r = min(r_h,r_w)
+        interp = cv2.INTER_AREA if r < 1 and not self.augment else cv2.INTER_LINEAR
+        img = cv2.resize(img, (int(w0 * r), int(h0 * r)), interpolation=interp)
         return img, (h0, w0), img.shape[:2]  # img, hw_original, hw_resized
     else:
         return self.imgs[index], self.img_hw0[index], self.img_hw[index]  # img, hw_original, hw_resized
@@ -734,12 +725,8 @@ def load_mosaic(self, index):
 
     labels4, segments4 = [], []
     s = self.img_size
-    if isinstance(s,tuple) or isinstance(s,list):
-        xs = s[0]
-        if len(s)>1 and s[0] < s[1] :
-            xs = s[1]
-        s = xs
-    yc, xc = [int(random.uniform(-x, 2 * s + x)) for x in self.mosaic_border]  # mosaic center x, y
+    yc = int(random.uniform(-self.mosaic_border[0], 2 * s[0] + self.mosaic_border[0]))   # mosaic center x, y
+    xc = int(random.uniform(-self.mosaic_border[1], 2 * s[1] + self.mosaic_border[1]))  # mosaic center x, y
     indices = [index] + random.choices(self.indices, k=3)  # 3 additional image indices
     for i, index in enumerate(indices):
         # Load image
@@ -747,19 +734,18 @@ def load_mosaic(self, index):
 
         # place img in img4
         if i == 0:  # top left
-            img4 = np.full((s * 2, s * 2, img.shape[2]), 114, dtype=np.uint8)  # base image with 4 tiles
+            img4 = np.full((s[0] * 2, s[1] * 2, img.shape[2]), 114, dtype=np.uint8)  # base image with 4 tiles
             x1a, y1a, x2a, y2a = max(xc - w, 0), max(yc - h, 0), xc, yc  # xmin, ymin, xmax, ymax (large image)
             x1b, y1b, x2b, y2b = w - (x2a - x1a), h - (y2a - y1a), w, h  # xmin, ymin, xmax, ymax (small image)
         elif i == 1:  # top right
-            x1a, y1a, x2a, y2a = xc, max(yc - h, 0), min(xc + w, s * 2), yc
+            x1a, y1a, x2a, y2a = xc, max(yc - h, 0), min(xc + w, s[1] * 2), yc
             x1b, y1b, x2b, y2b = 0, h - (y2a - y1a), min(w, x2a - x1a), h
         elif i == 2:  # bottom left
-            x1a, y1a, x2a, y2a = max(xc - w, 0), yc, xc, min(s * 2, yc + h)
+            x1a, y1a, x2a, y2a = max(xc - w, 0), yc, xc, min(s[0] * 2, yc + h)
             x1b, y1b, x2b, y2b = w - (x2a - x1a), 0, w, min(y2a - y1a, h)
         elif i == 3:  # bottom right
-            x1a, y1a, x2a, y2a = xc, yc, min(xc + w, s * 2), min(s * 2, yc + h)
+            x1a, y1a, x2a, y2a = xc, yc, min(xc + w, s[1] * 2), min(s[0] * 2, yc + h)
             x1b, y1b, x2b, y2b = 0, 0, min(w, x2a - x1a), min(y2a - y1a, h)
-
         img4[y1a:y2a, x1a:x2a] = img[y1b:y2b, x1b:x2b]  # img4[ymin:ymax, xmin:xmax]
         padw = x1a - x1b
         padh = y1a - y1b
@@ -775,7 +761,7 @@ def load_mosaic(self, index):
     # Concat/clip labels
     labels4 = np.concatenate(labels4, 0)
     for x in (labels4[:, 1:], *segments4):
-        np.clip(x, 0, 2 * s, out=x)  # clip when using random_perspective()
+        np.clip(x, 0, 2 * s[1], out=x)  # clip when using random_perspective()
     # img4, labels4 = replicate(img4, labels4)  # replicate
 
     # Augment
@@ -798,11 +784,6 @@ def load_mosaic9(self, index):
 
     labels9, segments9 = [], []
     s = self.img_size
-    if isinstance(s,tuple) or isinstance(s,list):
-        xs = s[0]
-        if len(s)>1 and s[0] < s[1] :
-            xs = s[1]
-        s = xs
     indices = [index] + random.choices(self.indices, k=8)  # 8 additional image indices
     for i, index in enumerate(indices):
         # Load image
@@ -810,26 +791,26 @@ def load_mosaic9(self, index):
 
         # place img in img9
         if i == 0:  # center
-            img9 = np.full((s * 3, s * 3, img.shape[2]), 114, dtype=np.uint8)  # base image with 4 tiles
+            img9 = np.full((s[0] * 3, s[1] * 3, img.shape[2]), 114, dtype=np.uint8)  # base image with 4 tiles
             h0, w0 = h, w
-            c = s, s, s + w, s + h  # xmin, ymin, xmax, ymax (base) coordinates
+            c = s[1], s[0], s[1] + w, s[0] + h  # xmin, ymin, xmax, ymax (base) coordinates
         elif i == 1:  # top
-            c = s, s - h, s + w, s
+            c = s[1], s[0] - h, s[1] + w, s[0]
         elif i == 2:  # top right
-            c = s + wp, s - h, s + wp + w, s
+            c = s[1] + wp, s[0] - h, s[1] + wp + w, s[0]
         elif i == 3:  # right
-            c = s + w0, s, s + w0 + w, s + h
+            c = s[1] + w0, s[0], s[1] + w0 + w, s[0] + h
         elif i == 4:  # bottom right
-            c = s + w0, s + hp, s + w0 + w, s + hp + h
+            c = s[1] + w0, s[0] + hp, s[1] + w0 + w, s[0] + hp + h
         elif i == 5:  # bottom
-            c = s + w0 - w, s + h0, s + w0, s + h0 + h
+            c = s[1] + w0 - w, s[0] + h0, s[1] + w0, s[0] + h0 + h
         elif i == 6:  # bottom left
-            c = s + w0 - wp - w, s + h0, s + w0 - wp, s + h0 + h
+            c = s[1] + w0 - wp - w, s[0] + h0, s[1] + w0 - wp, s[0] + h0 + h
         elif i == 7:  # left
-            c = s - w, s + h0 - h, s, s + h0
+            c = s[1] - w, s[0] + h0 - h, s[1], s[0] + h0
         elif i == 8:  # top left
-            c = s - w, s + h0 - hp - h, s, s + h0 - hp
-
+            c = s[1] - w, s[0] + h0 - hp - h, s[1], s[0] + h0 - hp
+        #print(i)
         padx, pady = c[:2]
         x1, y1, x2, y2 = [max(x, 0) for x in c]  # allocate coords
 
@@ -846,8 +827,9 @@ def load_mosaic9(self, index):
         hp, wp = h, w  # height, width previous
 
     # Offset
-    yc, xc = [int(random.uniform(0, s)) for _ in self.mosaic_border]  # mosaic center x, y
-    img9 = img9[yc:yc + 2 * s, xc:xc + 2 * s]
+    yc = int(random.uniform(0, s[0]))   # mosaic center x, y
+    xc = int(random.uniform(0, s[1]))
+    img9 = img9[yc:yc + 2 * s[0], xc:xc + 2 * s[1]]
 
     # Concat/clip labels
     labels9 = np.concatenate(labels9, 0)
@@ -857,7 +839,7 @@ def load_mosaic9(self, index):
     segments9 = [x - c for x in segments9]
 
     for x in (labels9[:, 1:], *segments9):
-        np.clip(x, 0, 2 * s, out=x)  # clip when using random_perspective()
+        np.clip(x, 0, 2 * s[1], out=x)  # clip when using random_perspective()
     # img9, labels9 = replicate(img9, labels9)  # replicate
 
     # Augment
@@ -879,12 +861,8 @@ def load_samples(self, index):
 
     labels4, segments4 = [], []
     s = self.img_size
-    if isinstance(s,tuple) or isinstance(s,list):   
-        xs = s[0]
-        if len(s)>1 and s[0] < s[1] :
-            xs = s[1]
-        s = xs
-    yc, xc = [int(random.uniform(-x, 2 * s + x)) for x in self.mosaic_border]  # mosaic center x, y
+    yc = int(random.uniform(-self.mosaic_border[0], 2 * s[0] + self.mosaic_border[0]))  # mosaic center x, y
+    xc = int(random.uniform(-self.mosaic_border[1], 2 * s[1] + self.mosaic_border[1]))
     indices = [index] + random.choices(self.indices, k=3)  # 3 additional image indices
     for i, index in enumerate(indices):
         # Load image
@@ -892,17 +870,17 @@ def load_samples(self, index):
 
         # place img in img4
         if i == 0:  # top left
-            img4 = np.full((s * 2, s * 2, img.shape[2]), 114, dtype=np.uint8)  # base image with 4 tiles
+            img4 = np.full((s[0] * 2, s[1] * 2, img.shape[2]), 114, dtype=np.uint8)  # base image with 4 tiles
             x1a, y1a, x2a, y2a = max(xc - w, 0), max(yc - h, 0), xc, yc  # xmin, ymin, xmax, ymax (large image)
             x1b, y1b, x2b, y2b = w - (x2a - x1a), h - (y2a - y1a), w, h  # xmin, ymin, xmax, ymax (small image)
         elif i == 1:  # top right
-            x1a, y1a, x2a, y2a = xc, max(yc - h, 0), min(xc + w, s * 2), yc
+            x1a, y1a, x2a, y2a = xc, max(yc - h, 0), min(xc + w, s[1] * 2), yc
             x1b, y1b, x2b, y2b = 0, h - (y2a - y1a), min(w, x2a - x1a), h
         elif i == 2:  # bottom left
-            x1a, y1a, x2a, y2a = max(xc - w, 0), yc, xc, min(s * 2, yc + h)
+            x1a, y1a, x2a, y2a = max(xc - w, 0), yc, xc, min(s[0] * 2, yc + h)
             x1b, y1b, x2b, y2b = w - (x2a - x1a), 0, w, min(y2a - y1a, h)
         elif i == 3:  # bottom right
-            x1a, y1a, x2a, y2a = xc, yc, min(xc + w, s * 2), min(s * 2, yc + h)
+            x1a, y1a, x2a, y2a = xc, yc, min(xc + w, s[1] * 2), min(s[0] * 2, yc + h)
             x1b, y1b, x2b, y2b = 0, 0, min(w, x2a - x1a), min(y2a - y1a, h)
 
         img4[y1a:y2a, x1a:x2a] = img[y1b:y2b, x1b:x2b]  # img4[ymin:ymax, xmin:xmax]
@@ -920,7 +898,7 @@ def load_samples(self, index):
     # Concat/clip labels
     labels4 = np.concatenate(labels4, 0)
     for x in (labels4[:, 1:], *segments4):
-        np.clip(x, 0, 2 * s, out=x)  # clip when using random_perspective()
+        np.clip(x, 0, 2 * s[1], out=x)  # clip when using random_perspective()
     # img4, labels4 = replicate(img4, labels4)  # replicate
 
     # Augment
