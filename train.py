@@ -338,11 +338,7 @@ def train(hyp, opt, device, tb_writer=None):
     nl = model.model[-1].nl  # number of detection layers (used for scaling hyp['obj'])
     hyp['box'] *= 3. / nl  # scale to layers
     hyp['cls'] *= nc / 80. * 3. / nl  # scale to classes and layers
-    if isinstance(imgsz,tuple) or isinstance(imgsz,list):
-        imgsz1 = imgsz[0]
-    else:
-        imgsz1 = imgsz
-    hyp['obj'] *= (imgsz1 / 640) ** 2 * 3. / nl  # scale to image size and layers
+    hyp['obj'] *= (imgsz[0] / 640) ** 2 * 3. / nl  # scale to image size and layers
     hyp['label_smoothing'] = opt.label_smoothing
     model.nc = nc  # attach number of classes to model
     model.hyp = hyp  # attach hyperparameters to model
@@ -363,7 +359,7 @@ def train(hyp, opt, device, tb_writer=None):
         if model.loss_funtion[out_layer_index] == "TalOTA-anchor-free-loss":
             compute_loss = v8DetectionLoss(model, out_layer=out_layer)
         elif model.loss_funtion[out_layer_index] == "SimOTA-anchor-loss":
-            compute_loss = ComputeLossOTA(model, out_layer=out_layer, imgsz=imgsz1)  # init loss class
+            compute_loss = ComputeLossOTA(model, out_layer=out_layer, imgsz=imgsz)  # init loss class
 
         elif model.loss_funtion[out_layer_index] == "yolov1-loss":
             compute_loss = ComputeLossYOLOv1(model)  # init loss class
@@ -475,7 +471,7 @@ def train(hyp, opt, device, tb_writer=None):
 
             # Multi-scale
             if opt.multi_scale:
-                sz = random.randrange(imgsz * 0.5, imgsz * 1.5 + gs) // gs * gs  # size
+                sz = random.randrange(imgsz[0] * 0.5, imgsz[1] * 1.5 + gs) // gs * gs  # size
                 sf = sz / max(imgs.shape[2:])  # scale factor
                 if sf != 1:
                     ns = [math.ceil(x * sf / gs) * gs for x in imgs.shape[2:]]  # new shape (stretched to gs-multiple)
@@ -523,7 +519,7 @@ def train(hyp, opt, device, tb_writer=None):
                 for loss_items in loss_items_list:
                     mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
                     show_img_size = opt.img_size
-                    if  isinstance(show_img_size,list) and len(show_img_size)>1:
+                    if  show_img_size[0] != show_img_size[1]:
                         show_img_size = '%gx%g'%(show_img_size[0],show_img_size[1])
                     else:
                         show_img_size = show_img_size[0]
@@ -735,6 +731,8 @@ if __name__ == '__main__':
     # if opt.global_rank in [-1, 0]:
     #    check_git_status()
     #    check_requirements()
+    if len(opt.img_size) == 1:
+        opt.img_size = [opt.img_size[0],opt.img_size[0]]
 
     # Resume
     wandb_run = check_wandb_resume(opt)
