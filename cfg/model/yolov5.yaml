@@ -1,0 +1,24 @@
+# yolov5
+model:
+  scales: # model compound scaling constants, i.e. 'model=yolov5n.yaml' will call yolov5.yaml with scale 'n'
+    # [depth, width, max_channels]
+    n: [ 0.33, 0.25, 1024 ]
+    s: [ 0.33, 0.50, 1024 ]
+    m: [ 0.67, 0.75, 1024 ]
+    l: [ 1.00, 1.00, 1024 ]
+    x: [ 1.33, 1.25, 1024 ]
+  backbone:
+    name: yolov5-backbone
+  neck: yolov5-neck
+  head: yolo-anchor-head
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,19 @@
+# yolov2
+model:
+  backbone:
+    name: yolov2-backbone
+    out_layer: [ 12,18 ]
+  neck:
+    name: yolov2-neck
+    out_layer: [ 5 ]
+  head: yolov2-head
+
+
+
+
+
+
+
+
+
+
