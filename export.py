@@ -47,6 +47,15 @@ if __name__ == '__main__':
     model = attempt_load(opt.weights, map_location=device)  # load FP32 model
     labels = model.names
 
+    # Get model img-size
+    auto_get_img_size = True
+    for arg in sys.argv:
+        if "--img-size" in arg:
+            auto_get_img_size = False
+
+    if auto_get_img_size:
+        opt.img_size = list(model.imgsz)
+
     # Checks
     if hasattr(model,"stride"):
         gs = int(max(model.stride))  # grid size (max stride)
