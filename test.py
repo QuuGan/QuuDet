@@ -19,6 +19,8 @@ from utils.torch_utils import select_device, time_synchronized, TracedModel
 import openpyxl
 from datetime import datetime
 
+import sys
+
 def test(data,
          weights=None,
          batch_size=32,
@@ -39,7 +41,8 @@ def test(data,
          wandb_logger=None,
          half_precision=True,
          trace=False,
-         is_coco=False):
+         is_coco=False,
+         auto_get_img_size=False):
     # Initialize/load model and set device
     training = model is not None
     txt_result = []
@@ -64,6 +67,9 @@ def test(data,
         yaml_file = model.yaml_file
         model_parameters = model.model_parameters
         gs = max(int(model.stride.max()), 32)  # grid size (max stride)
+
+        if auto_get_img_size:
+            imgsz = list(model.imgsz)
         imgsz = check_img_size(imgsz, s=gs)  # check img_size
 
         if trace:
@@ -346,6 +352,10 @@ if __name__ == '__main__':
     opt.data = check_file(opt.data)  # check file
     print(opt)
     # check_requirements()
+    auto_get_img_size = True
+    for arg in sys.argv:
+        if "--img-size" in arg:
+            auto_get_img_size = False
 
     if opt.task in ('train', 'val', 'test'):  # run normally
         test(opt.data,
@@ -361,12 +371,13 @@ if __name__ == '__main__':
              save_txt=opt.save_txt | opt.save_hybrid,
              save_hybrid=opt.save_hybrid,
              save_conf=opt.save_conf,
-             trace=not opt.no_trace
+             trace=not opt.no_trace,
+             auto_get_img_size = auto_get_img_size
              )
 
     elif opt.task == 'speed':  # speed benchmarks
         # for w in opt.weights:
-        test(opt.data, opt.weights, opt.batch_size, opt.img_size)
+        test(opt.data, opt.weights, opt.batch_size, opt.img_size,auto_get_img_size = auto_get_img_size)
 
     elif opt.task == 'study':  # run over a range of settings and save/plot
         # python test.py --task study --data coco.yaml --iou 0.65 --weights yolov7.pt
@@ -377,7 +388,7 @@ if __name__ == '__main__':
             for i in x:  # img-size
                 print(f'\nRunning {f} point {i}...')
                 r, _, t = test(opt.data, w, opt.batch_size, i, opt.conf_thres, opt.iou_thres, opt.save_json,
-                               plots=False)
+                               plots=False,auto_get_img_size = auto_get_img_size)
                 y.append(r + t)  # results and times
             np.savetxt(f, y, fmt='%10.4g')  # save
         os.system('zip -r study.zip study_*.txt')
