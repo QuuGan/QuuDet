@@ -229,9 +229,9 @@ def train(hyp, opt, device, tb_writer=None):
             if hasattr(v.rbr_dense, 'vector'):
                 pg0.append(v.rbr_dense.vector)
 
-    if opt.adam:
+    if opt.optimizer == 'Adam':
         optimizer = optim.Adam(pg0, lr=hyp['lr0'], betas=(hyp['momentum'], 0.999))  # adjust beta1 to momentum
-    elif opt.adamW:
+    elif opt.optimizer == 'AdamW':
         optimizer = optim.AdamW(pg0, lr=hyp['lr0'], betas=(hyp['momentum'], 0.999))  # adjust beta1 to momentum
     else:
         optimizer = optim.SGD(pg0, lr=hyp['lr0'], momentum=hyp['momentum'], nesterov=True)
@@ -705,8 +705,9 @@ if __name__ == '__main__':
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--multi-scale', action='store_true', help='vary img-size +/- 50%%')
     parser.add_argument('--single-cls', action='store_true', help='train multi-class data as single-class')
-    parser.add_argument('--adam', action='store_true', help='use torch.optim.Adam() optimizer')
-    parser.add_argument('--adamW', action='store_true', help='use torch.optim.AdamW() optimizer')
+    # parser.add_argument('--adam', action='store_true', help='use torch.optim.Adam() optimizer')
+    # parser.add_argument('--adamW', action='store_true', help='use torch.optim.AdamW() optimizer')
+    parser.add_argument('--optimizer', default='SGD', help='choose optimizer as SGD Adam AdamW')  # 选择优化器，默认为SGD
     parser.add_argument('--sync-bn', action='store_true', help='use SyncBatchNorm, only available in DDP mode')
     parser.add_argument('--local_rank', type=int, default=-1, help='DDP parameter, do not modify')
     parser.add_argument('--workers', type=int, default=8, help='maximum number of dataloader workers')
