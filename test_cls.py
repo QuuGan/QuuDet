@@ -74,12 +74,21 @@ def test(
         # Dataloader
         data = Path(data)
         test_dir = data / 'test' if (data / 'test').exists() else data / 'val'  # data/test or data/val
-        dataloader = create_classification_dataloader(path=test_dir,
-                                                      imgsz=imgsz,
-                                                      batch_size=batch_size,
-                                                      augment=False,
-                                                      rank=-1,
-                                                      workers=workers)
+        if opt.fullresize:
+            dataloader = create_classification_dataloader(path=test_dir,
+                                                          imgsz=imgsz,
+                                                          batch_size=batch_size,
+                                                          augment=False,
+                                                          rank=-1,
+                                                          workers=workers,
+                                                          fullresize=True)
+        else:
+            dataloader = create_classification_dataloader(path=test_dir,
+                                                          imgsz=imgsz,
+                                                          batch_size=batch_size,
+                                                          augment=False,
+                                                          rank=-1,
+                                                          workers=workers)
 
     model.eval()
     pred, targets, loss, dt = [], [], 0, [0.0, 0.0, 0.0]
@@ -145,6 +154,7 @@ def parse_opt():
     parser.add_argument('--data', type=str, default=r'', help='dataset path')
     parser.add_argument('--batch-size', type=int, default=128, help='batch size')
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=224, help='inference size (pixels)')
+    parser.add_argument('--fullresize', action='store_true',help='Stretching images without maintaining aspect ratio')  # 不保持宽高比拉伸图像
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--workers', type=int, default=8, help='max dataloader workers (per RANK in DDP mode)')
     parser.add_argument('--verbose', nargs='?', const=True, default=True, help='verbose output')
