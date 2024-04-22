@@ -4,6 +4,7 @@ import math
 import os
 import random
 import time
+import cv2
 from copy import deepcopy
 from pathlib import Path
 from threading import Thread
@@ -131,7 +132,6 @@ def train(hyp, opt, device, tb_writer=None):
         os.makedirs(cfg_head_folder)
         for head_path in model.head_path:
             shutil.copy(head_path, cfg_head_folder)
-
 
     with torch_distributed_zero_first(rank):
         check_dataset(data_dict)  # check
@@ -285,7 +285,7 @@ def train(hyp, opt, device, tb_writer=None):
 
     # Image sizes
     gs = max(int(model.stride.max()), 32)  # grid size (max stride)
-    imgsz=imgsz_test =check_img_size(opt.img_size, gs)  # verify imgsz are gs-multiples
+    imgsz = imgsz_test = check_img_size(opt.img_size, gs)  # verify imgsz are gs-multiples
 
     # DP mode
     if cuda and rank == -1 and torch.cuda.device_count() > 1:
@@ -297,20 +297,36 @@ def train(hyp, opt, device, tb_writer=None):
         logger.info('Using SyncBatchNorm()')
 
     # Trainloader
-    dataloader, dataset = create_dataloader(train_path, imgsz, batch_size, gs, opt,
-                                            hyp=hyp, augment=True, cache=not opt.not_cache_images, rect=opt.rect, rank=rank,
-                                            world_size=opt.world_size, workers=opt.workers,
-                                            image_weights=opt.image_weights, quad=opt.quad, prefix=colorstr('train: '))
+    if opt.fullresize:
+        dataloader, dataset = create_dataloader(train_path, imgsz, batch_size, gs, opt,
+                                                hyp=hyp, augment=True, cache=not opt.not_cache_images, rect=opt.rect,
+                                                rank=rank,
+                                                world_size=opt.world_size, workers=opt.workers,
+                                                image_weights=opt.image_weights, quad=opt.quad, fullresize=True,
+                                                prefix=colorstr('train: '))
+    else:
+        dataloader, dataset = create_dataloader(train_path, imgsz, batch_size, gs, opt,
+                                                hyp=hyp, augment=True, cache=not opt.not_cache_images, rect=opt.rect,
+                                                rank=rank,
+                                                world_size=opt.world_size, workers=opt.workers,
+                                                image_weights=opt.image_weights, quad=opt.quad,
+                                                prefix=colorstr('train: '))
     mlc = np.concatenate(dataset.labels, 0)[:, 0].max()  # max label class
     nb = len(dataloader)  # number of batches
     assert mlc < nc, 'Label class %g exceeds nc=%g in %s. Possible class labels are 0-%g' % (mlc, nc, opt.data, nc - 1)
 
     # Process 0
     if rank in [-1, 0]:
-        testloader = create_dataloader(test_path, imgsz_test, batch_size * 2, gs, opt,  # testloader
-                                       hyp=hyp, cache=not opt.not_cache_images , rect=True, rank=-1,
-                                       world_size=opt.world_size, workers=opt.workers,
-                                       pad=0.5, prefix=colorstr('val: '))[0]
+        if opt.fullresize:
+            testloader = create_dataloader(test_path, imgsz_test, batch_size * 2, gs, opt,  # testloader
+                                           hyp=hyp, cache=not opt.not_cache_images, rect=True, rank=-1,
+                                           world_size=opt.world_size, workers=opt.workers, fullresize=True,
+                                           pad=0.5, prefix=colorstr('val: '))[0]
+        else:
+            testloader = create_dataloader(test_path, imgsz_test, batch_size * 2, gs, opt,  # testloader
+                                           hyp=hyp, cache=not opt.not_cache_images, rect=True, rank=-1,
+                                           world_size=opt.world_size, workers=opt.workers,
+                                           pad=0.5, prefix=colorstr('val: '))[0]
 
         if not opt.resume:
             labels = np.concatenate(dataset.labels, 0)
@@ -338,7 +354,7 @@ def train(hyp, opt, device, tb_writer=None):
     nl = model.model[-1].nl  # number of detection layers (used for scaling hyp['obj'])
     hyp['box'] *= 3. / nl  # scale to layers
     hyp['cls'] *= nc / 80. * 3. / nl  # scale to classes and layers
-    hyp['obj'] *= (max(imgsz[0],imgsz[1])/640) ** 2 * 3. / nl  # scale to image size and layers
+    hyp['obj'] *= (max(imgsz[0], imgsz[1]) / 640) ** 2 * 3. / nl  # scale to image size and layers
     hyp['label_smoothing'] = opt.label_smoothing
     model.nc = nc  # attach number of classes to model
     model.hyp = hyp  # attach hyperparameters to model
@@ -520,13 +536,13 @@ def train(hyp, opt, device, tb_writer=None):
                 for loss_items in loss_items_list:
                     mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
                     show_img_size = opt.img_size
-                    if  show_img_size[0] != show_img_size[1]:
-                        show_img_size = '%gx%g'%(show_img_size[0],show_img_size[1])
+                    if show_img_size[0] != show_img_size[1]:
+                        show_img_size = '%gx%g' % (show_img_size[0], show_img_size[1])
                     else:
                         show_img_size = show_img_size[0]
                     mem = '%.3gG' % (torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0)  # (GB)
-                    s = ('%10s' * 2 + '%10.4g' * 5+'  %s') % (
-                        '%g/%g' % (epoch, epochs - 1), mem, *mloss, targets.shape[0],str(show_img_size))
+                    s = ('%10s' * 2 + '%10.4g' * 5 + '  %s') % (
+                        '%g/%g' % (epoch, epochs - 1), mem, *mloss, targets.shape[0], str(show_img_size))
                     pbar.set_description(s)
 
                 # Plot
@@ -550,7 +566,7 @@ def train(hyp, opt, device, tb_writer=None):
         # DDP process 0 or single-GPU
         if rank in [-1, 0]:
             # mAP
-            ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'gr', 'names', 'stride', 'class_weights','imgsz'])
+            ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'gr', 'names', 'stride', 'class_weights', 'imgsz'])
             final_epoch = epoch + 1 == epochs
             if (not opt.notest or final_epoch) and epoch in val_epochs:  # Calculate mAP
                 wandb_logger.current_epoch = epoch + 1
@@ -570,11 +586,10 @@ def train(hyp, opt, device, tb_writer=None):
 
             # Write
             if epoch in val_epochs:
-               with open(results_file, 'a') as f:
-                   f.write(s + '%10.4g' * 4 % results + '\n')  # append metrics, val_loss
+                with open(results_file, 'a') as f:
+                    f.write(s + '%10.4g' * 4 % results + '\n')  # append metrics, val_loss
             if len(opt.name) and opt.bucket:
                 os.system('gsutil cp %s gs://%s/results/results%s.txt' % (results_file, opt.bucket, opt.name))
-
 
             # Log
             tags = ['train/box_loss', 'train/obj_loss', 'train/cls_loss',  # train loss
@@ -683,7 +698,9 @@ if __name__ == '__main__':
     parser.add_argument('--hyp', type=str, default='data/hyp.yaml', help='hyperparameters path')
     parser.add_argument('--epochs', type=int, default=300)
     parser.add_argument('--batch-size', type=int, default=16, help='total batch size for all GPUs')
-    parser.add_argument('--img-size', nargs='+', type=int, default=[640,640], help='(height,width)')
+    parser.add_argument('--img-size', nargs='+', type=int, default=[640, 640], help='(height,width)')
+    parser.add_argument('--fullresize', action='store_true',
+                        help='Stretching images without maintaining aspect ratio')  # 不保持宽高比拉伸图像
     parser.add_argument('--conf-thres', type=float, default=0.005, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.5, help='IOU threshold for NMS')
     parser.add_argument('--rect', action='store_true', help='rectangular training')
@@ -734,7 +751,7 @@ if __name__ == '__main__':
     #    check_git_status()
     #    check_requirements()
     if len(opt.img_size) == 1:
-        opt.img_size = [opt.img_size[0],opt.img_size[0]]
+        opt.img_size = [opt.img_size[0], opt.img_size[0]]
 
     # Resume
     wandb_run = check_wandb_resume(opt)
@@ -752,7 +769,7 @@ if __name__ == '__main__':
         # opt.hyp = opt.hyp or ('hyp.finetune.yaml' if opt.weights else 'hyp.scratch.yaml')
         opt.data, opt.cfg, opt.hyp = check_file(opt.data), check_file(opt.cfg), check_file(opt.hyp)  # check files
         assert len(opt.cfg) or len(opt.weights), 'either --cfg or --weights must be specified'
-        #opt.img_size.extend([opt.img_size[-1]] * (2 - len(opt.img_size)))  # extend to 2 sizes (train, test)
+        # opt.img_size.extend([opt.img_size[-1]] * (2 - len(opt.img_size)))  # extend to 2 sizes (train, test)
         opt.name = 'evolve' if opt.evolve else opt.name
         opt.save_dir = increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok | opt.evolve)  # increment run
 
