@@ -22,10 +22,9 @@ from tqdm import tqdm
 import torchvision
 import torchvision.transforms as T
 
-
 import pickle
 from copy import deepcopy
-#from pycocotools import mask as maskUtils
+# from pycocotools import mask as maskUtils
 from torchvision.utils import save_image
 from torchvision.ops import roi_pool, roi_align, ps_roi_pool, ps_roi_align
 
@@ -66,7 +65,7 @@ def exif_size(img):
 
 
 def create_dataloader(path, imgsz, batch_size, stride, opt, hyp=None, augment=False, cache=False, pad=0.0, rect=False,
-                      rank=-1, world_size=1, workers=8, image_weights=False, quad=False, prefix=''):
+                      rank=-1, world_size=1, workers=8, image_weights=False, fullresize=False, quad=False, prefix=''):
     # Make sure only the first process in DDP process the dataset first, and the following others can use the cache
     with torch_distributed_zero_first(rank):
         dataset = LoadImagesAndLabels(path, imgsz, batch_size,
@@ -78,7 +77,8 @@ def create_dataloader(path, imgsz, batch_size, stride, opt, hyp=None, augment=Fa
                                       stride=int(stride),
                                       pad=pad,
                                       image_weights=image_weights,
-                                      prefix=prefix)
+                                      prefix=prefix,
+                                      fullresize=fullresize)
 
     batch_size = min(batch_size, len(dataset))
     nw = min([os.cpu_count() // world_size, batch_size if batch_size > 1 else 0, workers])  # number of workers
@@ -358,7 +358,8 @@ def img2label_paths(img_paths):
 
 
 class LoadImagesAndLabels(Dataset):  # for training/testing
-    def __init__(self, path, img_size=[640,640], batch_size=16, augment=False, hyp=None, rect=False, image_weights=False,
+    def __init__(self, path, img_size=[640, 640], batch_size=16, augment=False, hyp=None, rect=False,
+                 image_weights=False, fullresize=False,
                  cache_images=False, single_cls=False, stride=32, pad=0.0, prefix=''):
         self.img_size = img_size
         self.augment = augment
@@ -372,6 +373,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         self.mixup = True
         self.augment_affine = True
         self.augment_hsv = True
+        # self.fullresize = fullresize
         # self.albumentations = Albumentations() if augment else None
 
         try:
@@ -399,9 +401,9 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         self.label_files = img2label_paths(self.img_files)  # labels
         cache_path = (p if p.is_file() else Path(self.label_files[0]).parent).with_suffix('.cache')  # cached labels
         # if cache_path.is_file():
-            # cache, exists = torch.load(cache_path), True  # load
-            # if cache['hash'] != get_hash(self.label_files + self.img_files) or 'version' not in cache:  # changed
-            #    cache, exists = self.cache_labels(cache_path, prefix), False  # re-cache
+        # cache, exists = torch.load(cache_path), True  # load
+        # if cache['hash'] != get_hash(self.label_files + self.img_files) or 'version' not in cache:  # changed
+        #    cache, exists = self.cache_labels(cache_path, prefix), False  # re-cache
         # else:
         cache, exists = self.cache_labels(cache_path, prefix), False  # cache
 
@@ -464,7 +466,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                 self.im_cache_dir.mkdir(parents=True, exist_ok=True)
             gb = 0  # Gigabytes of cached images
             self.img_hw0, self.img_hw = [None] * n, [None] * n
-            results = ThreadPool(8).imap(lambda x: load_image(*x), zip(repeat(self), range(n)))
+            results = ThreadPool(8).imap(lambda x: load_image(*x, fullresize), zip(repeat(self), range(n)))
             pbar = tqdm(enumerate(results), total=n)
             for i, x in pbar:
                 if cache_images == 'disk':
@@ -476,6 +478,13 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                     gb += self.imgs[i].nbytes
                 pbar.desc = f'{prefix}Caching images ({gb / 1E9:.1f}GB)'
             pbar.close()
+    #
+    # # 确定标签框的唯一性
+    # def remove_duplicate_labels(labels):
+    #     bboxes = labels[:, 1:]  # 提取标签框坐标
+    #     unique_bboxes, indices = np.unique(bboxes, axis=0, return_index=True)  # 找出唯一标签框及其索引
+    #     unique_labels = labels[indices]  # 使用唯一标签框索引获取无重复标签的结果
+    #     return unique_labels
 
     def cache_labels(self, path=Path('./labels.cache'), prefix=''):
         # Cache dataset labels, check images and read shapes
@@ -510,6 +519,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                     else:
                         ne += 1  # label empty
                         l = np.zeros((0, 5), dtype=np.float32)
+
                 else:
                     nm += 1  # label missing
                     l = np.zeros((0, 5), dtype=np.float32)
@@ -541,8 +551,9 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
     #     #self.shuffled_vector = np.random.permutation(self.nF) if self.augment else np.arange(self.nF)
     #     return self
 
-    def __getitem__(self, index):
+    def __getitem__(self, index, fullresize=False):
 
+        self.fullresize = fullresize
         # print(self.mixup,self.mosaic,self.augment_affine,self.augment_hsv)
         index = self.indices[index]  # linear, shuffled, or image_weights
 
@@ -568,7 +579,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
         else:
             # Load image
-            img, (h0, w0), (h, w) = load_image(self, index)
+            img, (h0, w0), (h, w) = load_image(self, index, fullresize)
 
             # Letterbox
             shape = self.batch_shapes[self.batch[index]] if self.rect else self.img_size  # final letterboxed shape
@@ -677,7 +688,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
 
 # Ancillary functions --------------------------------------------------------------------------------------------------
-def load_image(self, index):
+def load_image(self, index, fullresize=False):
     # loads 1 image from dataset, returns img, original hw, resized hw
     img = self.imgs[index]
     if img is None:  # not cached
@@ -687,9 +698,12 @@ def load_image(self, index):
         h0, w0 = img.shape[:2]  # orig hw
         r_h = self.img_size[0] / h0  # resize image to img_size
         r_w = self.img_size[1] / w0
-        r = min(r_h,r_w)
+        r = min(r_h, r_w)
         interp = cv2.INTER_AREA if r < 1 and not self.augment else cv2.INTER_LINEAR
-        img = cv2.resize(img, (int(w0 * r), int(h0 * r)), interpolation=interp)
+        if fullresize:
+            img = cv2.resize(img, (int(self.img_size[1]), int(self.img_size[0])), interpolation=interp)
+        else:
+            img = cv2.resize(img, (int(w0 * r), int(h0 * r)), interpolation=interp)
         return img, (h0, w0), img.shape[:2]  # img, hw_original, hw_resized
     else:
         return self.imgs[index], self.img_hw0[index], self.img_hw[index]  # img, hw_original, hw_resized
@@ -725,7 +739,7 @@ def load_mosaic(self, index):
 
     labels4, segments4 = [], []
     s = self.img_size
-    yc = int(random.uniform(-self.mosaic_border[0], 2 * s[0] + self.mosaic_border[0]))   # mosaic center x, y
+    yc = int(random.uniform(-self.mosaic_border[0], 2 * s[0] + self.mosaic_border[0]))  # mosaic center x, y
     xc = int(random.uniform(-self.mosaic_border[1], 2 * s[1] + self.mosaic_border[1]))  # mosaic center x, y
     indices = [index] + random.choices(self.indices, k=3)  # 3 additional image indices
     for i, index in enumerate(indices):
@@ -810,7 +824,7 @@ def load_mosaic9(self, index):
             c = s[1] - w, s[0] + h0 - h, s[1], s[0] + h0
         elif i == 8:  # top left
             c = s[1] - w, s[0] + h0 - hp - h, s[1], s[0] + h0 - hp
-        #print(i)
+        # print(i)
         padx, pady = c[:2]
         x1, y1, x2, y2 = [max(x, 0) for x in c]  # allocate coords
 
@@ -827,7 +841,7 @@ def load_mosaic9(self, index):
         hp, wp = h, w  # height, width previous
 
     # Offset
-    yc = int(random.uniform(0, s[0]))   # mosaic center x, y
+    yc = int(random.uniform(0, s[0]))  # mosaic center x, y
     xc = int(random.uniform(0, s[1]))
     img9 = img9[yc:yc + 2 * s[0], xc:xc + 2 * s[1]]
 
@@ -1439,23 +1453,30 @@ def imge_size_return(img, original_shape):
     img = img.crop((0, 0, original_shape[0], original_shape[1]))
     return img
 
+
 class CenterCrop:
     """YOLOv8 CenterCrop class for image preprocessing, i.e. T.Compose([CenterCrop(size), ToTensor()])"""
 
-    def __init__(self, size=640):
+    def __init__(self, size=640, fullresize=False):
         """Converts an image from numpy array to PyTorch tensor."""
         super().__init__()
         self.h, self.w = (size, size) if isinstance(size, int) else size
+        self.fullresize = fullresize
 
     def __call__(self, im):  # im = np.array HWC
         # 将Pillow图像转换为NumPy数组
         pil_image_np = np.array(im)
         # OpenCV使用BGR，而Pillow使用RGB，所以需要转换颜色空间
         im = cv2.cvtColor(pil_image_np, cv2.COLOR_RGB2BGR)
-        imh, imw = im.shape[:2]
-        m = min(imh, imw)  # min dimension
-        top, left = (imh - m) // 2, (imw - m) // 2
-        return cv2.resize(im[top:top + m, left:left + m], (self.w, self.h), interpolation=cv2.INTER_LINEAR)
+        # 不保持宽高比的拉伸图像
+        if self.fullresize:
+            return cv2.resize(im, (self.w, self.h), interpolation=cv2.INTER_LINEAR)
+        # 原处理方式
+        else:
+            imh, imw = im.shape[:2]
+            m = min(imh, imw)  # min dimension
+            top, left = (imh - m) // 2, (imw - m) // 2
+            return cv2.resize(im[top:top + m, left:left + m], (self.w, self.h), interpolation=cv2.INTER_LINEAR)
 
 
 class ToTensor:
@@ -1473,18 +1494,23 @@ class ToTensor:
         im /= 255.0  # 0-255 to 0.0-1.0
         return im
 
-def classify_transforms(size=224, mean=(0.0, 0.0, 0.0), std=(1.0, 1.0, 1.0)):  # IMAGENET_MEAN, IMAGENET_STD
+
+def classify_transforms(size=224, mean=(0.0, 0.0, 0.0), std=(1.0, 1.0, 1.0),
+                        fullresize=False):  # IMAGENET_MEAN, IMAGENET_STD
     # Transforms to apply if albumentations not installed
     if not isinstance(size, int):
         raise TypeError(f'classify_transforms() size {size} must be integer, not (list, tuple)')
     if any(mean) or any(std):
-        return T.Compose([CenterCrop(size), ToTensor(), T.Normalize(mean, std, inplace=True)])
+        return T.Compose([CenterCrop(size, fullresize=fullresize), ToTensor(), T.Normalize(mean, std, inplace=True)])
     else:
-        return T.Compose([CenterCrop(size), ToTensor()])
+        return T.Compose([CenterCrop(size, fullresize=fullresize), ToTensor()])
+
 
 def hsv2colorjitter(h, s, v):
     """Map HSV (hue, saturation, value) jitter into ColorJitter values (brightness, contrast, saturation, hue)"""
     return v, v, s, h
+
+
 def classify_albumentations(
         augment=True,
         size=224,
@@ -1498,7 +1524,6 @@ def classify_albumentations(
         std=(1.0, 1.0, 1.0),  # IMAGENET_STD
         auto_aug=False,
 ):
-
     try:
         import albumentations as A
         from albumentations.pytorch import ToTensorV2
@@ -1516,14 +1541,14 @@ def classify_albumentations(
         else:  # Use fixed crop for eval set (reproducibility)
             T = [A.SmallestMaxSize(max_size=size), A.CenterCrop(height=size, width=size)]
         T += [A.Normalize(mean=mean, std=std), ToTensorV2()]  # Normalize and convert to Tensor
-        #LOGGER.info(prefix + ', '.join(f'{x}'.replace('always_apply=False, ', '') for x in T if x.p))
+        # LOGGER.info(prefix + ', '.join(f'{x}'.replace('always_apply=False, ', '') for x in T if x.p))
         return A.Compose(T)
 
     except ImportError:  # package not installed, skip
         pass
     except Exception as e:
         raise Exception(f'{e}')
-        #LOGGER.info(f'{prefix}{e}')
+        # LOGGER.info(f'{prefix}{e}')
 
 
 class ClassificationDataset(torchvision.datasets.ImageFolder):
@@ -1535,9 +1560,9 @@ class ClassificationDataset(torchvision.datasets.ImageFolder):
         album_transform: Albumentations transforms, used if installed
     """
 
-    def __init__(self, root, augment, imgsz, cache=False):
+    def __init__(self, root, augment, imgsz, cache=False, fullresize=False):
         super().__init__(root=root)
-        self.torch_transforms = classify_transforms(imgsz)
+        self.torch_transforms = classify_transforms(imgsz, fullresize=fullresize)
         self.album_transforms = classify_albumentations(augment, imgsz) if augment else None
         self.cache_ram = cache is True or cache == 'ram'
         self.cache_disk = cache == 'disk'
@@ -1558,22 +1583,27 @@ class ClassificationDataset(torchvision.datasets.ImageFolder):
         else:
             sample = self.torch_transforms(self.loader(f))
         return sample, j
+
+
 def seed_worker(worker_id):
     # Set dataloader worker seed https://pytorch.org/docs/stable/notes/randomness.html#dataloader
     worker_seed = torch.initial_seed() % 2 ** 32
     np.random.seed(worker_seed)
     random.seed(worker_seed)
+
+
 def create_classification_dataloader(path,
                                      imgsz=224,
                                      batch_size=16,
-                                     augment=True,
+                                     augment=False,
                                      cache=False,
                                      rank=-1,
                                      workers=8,
-                                     shuffle=True):
+                                     shuffle=True,
+                                     fullresize=False):
     # Returns Dataloader object to be used with YOLOv5 Classifier
     with torch_distributed_zero_first(rank):  # init dataset *.cache only once if DDP
-        dataset = ClassificationDataset(root=path, imgsz=imgsz, augment=augment, cache=cache)
+        dataset = ClassificationDataset(root=path, imgsz=imgsz, augment=augment, cache=cache, fullresize=fullresize)
     batch_size = min(batch_size, len(dataset))
     nd = torch.cuda.device_count()
     nw = min([os.cpu_count() // max(nd, 1), batch_size if batch_size > 1 else 0, workers])
