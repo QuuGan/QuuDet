@@ -91,9 +91,12 @@ def test_onnx(opt):
 
     # Dataloader
     opt.single_cls=False
-
-    dataloader = create_dataloader(data[opt.task] , (img_size_height,img_size_width), batch_size, gs, opt, pad=0.5, rect=False,
+    if opt.fullresize:
+        dataloader = create_dataloader(data[opt.task] , (img_size_height,img_size_width), batch_size, gs, opt, pad=0.5, rect=False, fullresize=True,
                                    prefix=colorstr(f'{"val"}: '))[0]
+    else:
+        dataloader = create_dataloader(data[opt.task], (img_size_height, img_size_width), batch_size, gs, opt, pad=0.5, rect=False,
+                          prefix=colorstr(f'{"val"}: '))[0]
 
     seen = 0
     confusion_matrix = ConfusionMatrix(nc=nc)
@@ -249,6 +252,8 @@ def test_onnx(opt):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='test_onnx.py')
+    parser.add_argument('--fullresize', action='store_true',
+                        help='Stretching images without maintaining aspect ratio')  # 不保持宽高比拉伸图像
     parser.add_argument('--weights', type=str, default='', help='model.onnx path(s)')
     parser.add_argument('--data', type=str, default='', help='*.data path')
     parser.add_argument('--batch-size', type=int, default=16, help='dynamic onnx model need set')
