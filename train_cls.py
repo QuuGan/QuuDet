@@ -16,7 +16,7 @@ from torch.cuda import amp
 from tqdm import tqdm
 
 FILE = Path(__file__).resolve()
-ROOT = FILE.parents[0]   # YOLOv5 root directory
+ROOT = FILE.parents[0]  # YOLOv5 root directory
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
@@ -24,9 +24,9 @@ ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 from models.yolo import Model
 from test_cls import test as validate
 from models.experimental import attempt_load
-#from models.yolo import ClassificationModel, DetectionModel 
-from utils.datasets  import create_classification_dataloader
-from utils.general import (  WorkingDirectory, check_git_status, check_requirements, colorstr,
+# from models.yolo import ClassificationModel, DetectionModel
+from utils.datasets import create_classification_dataloader
+from utils.general import (WorkingDirectory, check_git_status, check_requirements, colorstr,
                            increment_path, init_seeds)
 from utils.plots import imshow_cls
 from utils.torch_utils import (ModelEMA, model_info, reshape_classifier_output, select_device, smart_DDP,
@@ -41,7 +41,7 @@ def train(opt, device):
     init_seeds(opt.seed + 1 + RANK)
     save_dir, data, bs, epochs, nw, imgsz, pretrained = \
         Path(opt.save_dir), Path(opt.data), opt.batch_size, opt.epochs, min(os.cpu_count() - 1, opt.workers), \
-        opt.imgsz, str(opt.pretrained).lower() == 'true'
+            opt.imgsz, str(opt.pretrained).lower() == 'true'
     cuda = device.type != 'cpu'
 
     # Directories
@@ -50,7 +50,7 @@ def train(opt, device):
     last, best = wdir / 'last.pt', wdir / 'best.pt'
 
     # Save run settings
-    #yaml_save(save_dir / 'opt.yaml', vars(opt))
+    # yaml_save(save_dir / 'opt.yaml', vars(opt))
 
     # Logger
     # logger = GenericLogger(opt=opt, console_logger=LOGGER) if RANK in {-1, 0} else None
@@ -58,23 +58,46 @@ def train(opt, device):
     data_dir = data
     # Dataloaders
     nc = len([x for x in (data_dir / 'train').glob('*') if x.is_dir()])  # number of classes
-    trainloader = create_classification_dataloader(path=data_dir / 'train',
-                                                   imgsz=imgsz,
-                                                   batch_size=bs // WORLD_SIZE,
-                                                   augment=True,
-                                                   cache=opt.cache,
-                                                   rank=LOCAL_RANK,
-                                                   workers=nw)
+
+    if opt.fullresize:
+        trainloader = create_classification_dataloader(path=data_dir / 'train',
+                                                       imgsz=imgsz,
+                                                       batch_size=bs // WORLD_SIZE,
+                                                       augment=False,
+                                                       cache=opt.cache,
+                                                       rank=LOCAL_RANK,
+                                                       workers=nw,
+                                                       fullresize=True)
+    else:
+        trainloader = create_classification_dataloader(path=data_dir / 'train',
+                                                       imgsz=imgsz,
+                                                       batch_size=bs // WORLD_SIZE,
+                                                       augment=False,
+                                                       cache=opt.cache,
+                                                       rank=LOCAL_RANK,
+                                                       workers=nw,
+                                                       fullresize=False)
 
     test_dir = data_dir / 'test' if (data_dir / 'test').exists() else data_dir / 'val'  # data/test or data/val
     if RANK in {-1, 0}:
-        testloader = create_classification_dataloader(path=test_dir,
-                                                      imgsz=imgsz,
-                                                      batch_size=bs // WORLD_SIZE * 2,
-                                                      augment=False,
-                                                      cache=opt.cache,
-                                                      rank=-1,
-                                                      workers=nw)
+        if opt.fullresize:
+            testloader = create_classification_dataloader(path=test_dir,
+                                                          imgsz=imgsz,
+                                                          batch_size=bs // WORLD_SIZE * 2,
+                                                          augment=False,
+                                                          cache=opt.cache,
+                                                          rank=-1,
+                                                          workers=nw,
+                                                          fullresize=True)
+        else:
+            testloader = create_classification_dataloader(path=test_dir,
+                                                          imgsz=imgsz,
+                                                          batch_size=bs // WORLD_SIZE * 2,
+                                                          augment=False,
+                                                          cache=opt.cache,
+                                                          rank=-1,
+                                                          workers=nw,
+                                                          fullresize=False)
 
     # Model
     if Path(opt.weight).is_file() or opt.weight.endswith('.pt'):
@@ -82,7 +105,7 @@ def train(opt, device):
     else:
         model = Model(opt.cfg, ch=3, nc=nc).to(device)  # create
         # model = ClassificationModel(model=model, nc=nc, cutoff=opt.cutoff or 10)  # convert to classification model
-    model.training=True
+    model.training = True
     reshape_classifier_output(model, nc)  # update class count
 
     for p in model.parameters():
@@ -103,8 +126,8 @@ def train(opt, device):
             print(model)
         images, labels = next(iter(trainloader))
         file = imshow_cls(images[:25], labels[:25], names=names, f=save_dir / 'train_images.jpg')
-        #logger.log_images(file, name='Train Examples')
-        #logger.log_graph(model, imgsz)  # log model
+        # logger.log_images(file, name='Train Examples')
+        # logger.log_graph(model, imgsz)  # log model
 
     # Optimizer
     optimizer = smart_optimizer(model, opt.optimizer, opt.lr0, momentum=0.9, decay=5e-5)
@@ -131,10 +154,10 @@ def train(opt, device):
     scaler = amp.GradScaler(enabled=cuda)
     val = test_dir.stem  # 'val' or 'test'
     print(f'Image sizes {imgsz} train, {imgsz} test\n'
-                f'Using {nw * WORLD_SIZE} dataloader workers\n'
-                f"Logging results to {colorstr('bold', save_dir)}\n"
-                f'Starting {opt.weight} training on {data} dataset with {nc} classes for {epochs} epochs...\n\n'
-                f"{'Epoch':>10}{'GPU_mem':>10}{'train_loss':>12}{f'{val}_loss':>12}{'top1_acc':>12}{'top5_acc':>12}")
+          f'Using {nw * WORLD_SIZE} dataloader workers\n'
+          f"Logging results to {colorstr('bold', save_dir)}\n"
+          f'Starting {opt.weight} training on {data} dataset with {nc} classes for {epochs} epochs...\n\n'
+          f"{'Epoch':>10}{'GPU_mem':>10}{'train_loss':>12}{f'{val}_loss':>12}{'top1_acc':>12}{'top5_acc':>12}")
     for epoch in range(epochs):  # loop over the dataset multiple times
         tloss, vloss, fitness = 0.0, 0.0, 0.0  # train loss, val loss, fitness
         model.train()
@@ -171,9 +194,9 @@ def train(opt, device):
                 # Test
                 if i == len(pbar) - 1:  # last batch
                     top1, top5, vloss = validate(model=ema.ema,
-                                                     dataloader=testloader,
-                                                     criterion=criterion,
-                                                     pbar=pbar)  # test accuracy, loss
+                                                 dataloader=testloader,
+                                                 criterion=criterion,
+                                                 pbar=pbar)  # test accuracy, loss
                     fitness = top1  # define fitness as top1 accuracy
 
         # Scheduler
@@ -192,7 +215,7 @@ def train(opt, device):
                 "metrics/accuracy_top1": top1,
                 "metrics/accuracy_top5": top5,
                 "lr/0": optimizer.param_groups[0]['lr']}  # learning rate
-            #logger.log_metrics(metrics, epoch)
+            # logger.log_metrics(metrics, epoch)
 
             # Save model
             final_epoch = epoch + 1 == epochs
@@ -216,7 +239,7 @@ def train(opt, device):
     # Train complete
     if RANK in {-1, 0} and final_epoch:
         print(f'\nTraining complete ({(time.time() - t0) / 3600:.3f} hours)'
-                    f"\nResults saved to {colorstr('bold', save_dir)}")
+              f"\nResults saved to {colorstr('bold', save_dir)}")
 
         # # Plot examples
         # images, labels = (x[:25] for x in next(iter(testloader)))  # first 25 images and labels
@@ -225,8 +248,8 @@ def train(opt, device):
         #
         # # Log results
         # meta = {"epochs": epochs, "top1_acc": best_fitness, "date": datetime.now().isoformat()}
-        #logger.log_images(file, name='Test Examples (true-predicted)', epoch=epoch)
-        #logger.log_model(best, epochs, metadata=meta)
+        # logger.log_images(file, name='Test Examples (true-predicted)', epoch=epoch)
+        # logger.log_model(best, epochs, metadata=meta)
 
 
 def parse_opt(known=False):
@@ -238,10 +261,12 @@ def parse_opt(known=False):
     parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--batch-size', type=int, default=64, help='total batch size for all GPUs')
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=224, help='train, val image size (pixels)')
+    parser.add_argument('--fullresize', action='store_true',
+                        help='Stretching images without maintaining aspect ratio')  # 不保持宽高比拉伸图像
     parser.add_argument('--nosave', action='store_true', help='only save final checkpoint')
     parser.add_argument('--cache', type=str, nargs='?', const='ram', help='--cache images in "ram" (default) or "disk"')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
-    parser.add_argument('--workers', type=int, default=8, help='max dataloader workers (per RANK in DDP mode)')
+    parser.add_argument('--workers', type=int, default=0, help='max dataloader workers (per RANK in DDP mode)')
     parser.add_argument('--project', default=ROOT / 'runs/train_cls', help='save to project/name')
     parser.add_argument('--name', default='exp', help='save to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
@@ -258,8 +283,6 @@ def parse_opt(known=False):
 
 
 def main(opt):
-
-
     # DDP mode
     device = select_device(opt.device, batch_size=opt.batch_size)
     if LOCAL_RANK != -1:
