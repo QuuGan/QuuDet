@@ -101,8 +101,13 @@ def test(data,
         if device.type != 'cpu':
             model(torch.zeros(1, 3, imgsz[0], imgsz[1]).to(device).type_as(next(model.parameters())))  # run once
         task = opt.task if opt.task in ('train', 'val', 'test') else 'val'  # path to train/val/test images
-        dataloader = create_dataloader(data[task], imgsz, batch_size, gs, opt, pad=0.5, rect=True,
-                                       prefix=colorstr(f'{task}: '))[0]
+        if opt.fullresize:
+            dataloader = create_dataloader(data[task], imgsz, batch_size, gs, opt, pad=0.5, rect=True, fullresize=True,
+            prefix = colorstr(f'{task}: '))[0]
+        else:
+            dataloader = create_dataloader(data[task], imgsz, batch_size, gs, opt, pad=0.5, rect=True,
+                                           prefix=colorstr(f'{task}: '))[0]
+
 
     seen = 0
     confusion_matrix = ConfusionMatrix(nc=nc)
@@ -331,6 +336,8 @@ if __name__ == '__main__':
     parser.add_argument('--data', type=str, default='', help='*.data path')
     parser.add_argument('--batch-size', type=int, default=1, help='size of each image batch')
     parser.add_argument('--img-size', nargs='+', type=int, default=[640,640], help='height,width')
+    parser.add_argument('--fullresize', action='store_true',
+                        help='Stretching images without maintaining aspect ratio')  # 不保持宽高比拉伸图像
     parser.add_argument('--conf-thres', type=float, default=0.005, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.5, help='IOU threshold for NMS')
     parser.add_argument('--task', default='val', help='train, val, test, speed or study')
