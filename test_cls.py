@@ -22,28 +22,29 @@ if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
+from utils.datasets import create_classification_dataloader
+from utils.general import check_img_size, colorstr, increment_path
+from utils.torch_utils import select_device, time_sync
 
-from utils.datasets  import create_classification_dataloader
-from utils.general import  check_img_size, colorstr, increment_path
-from utils.torch_utils import select_device,time_sync
 
 def test(
-    data='',  # dataset dir
-    weights='',  # model.pt path(s)
-    batch_size=128,  # batch size
-    imgsz=224,  # inference size (pixels)
-    device='',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
-    workers=8,  # max dataloader workers (per RANK in DDP mode)
-    verbose=False,  # verbose output
-    project=ROOT / 'runs/val-cls',  # save to project/name
-    name='exp',  # save to project/name
-    exist_ok=False,  # existing project/name ok, do not increment
-    half=True,  # use FP16 half-precision inference
-    dnn=False,  # use OpenCV DNN for ONNX inference
-    model=None,
-    dataloader=None,
-    criterion=None,
-    pbar=None,
+        data='',  # dataset dir
+        weights='',  # model.pt path(s)
+        batch_size=128,  # batch size
+        imgsz=224,  # inference size (pixels)
+        fullresize = False,
+        device='',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
+        workers=8,  # max dataloader workers (per RANK in DDP mode)
+        verbose=False,  # verbose output
+        project=ROOT / 'runs/val-cls',  # save to project/name
+        name='exp',  # save to project/name
+        exist_ok=False,  # existing project/name ok, do not increment
+        half=True,  # use FP16 half-precision inference
+        dnn=False,  # use OpenCV DNN for ONNX inference
+        model=None,
+        dataloader=None,
+        criterion=None,
+        pbar=None,
 ):
     # Initialize/load model and set device
     training = model is not None
@@ -67,14 +68,15 @@ def test(
         # self.model = model  # explicitly assign for to(), cpu(), cuda(), half()
         # model = DetectMultiBackend(weights, device=device, dnn=dnn, fp16=half)
 
-        #pt, jit, engine =  model.pt, model.jit, model.engine
+        # pt, jit, engine =  model.pt, model.jit, model.engine
         imgsz = check_img_size(imgsz, s=32)  # check image size
-        #half = model.fp16  # FP16 supported on limited backends with CUDA
-        #batch_size = model.batch_size
+        # half = model.fp16  # FP16 supported on limited backends with CUDA
+        # batch_size = model.batch_size
         # Dataloader
         data = Path(data)
         test_dir = data / 'test' if (data / 'test').exists() else data / 'val'  # data/test or data/val
-        if opt.fullresize:
+        fullresize = opt.fullresize
+        if fullresize:
             dataloader = create_classification_dataloader(path=test_dir,
                                                           imgsz=imgsz,
                                                           batch_size=batch_size,
@@ -154,7 +156,8 @@ def parse_opt():
     parser.add_argument('--data', type=str, default=r'', help='dataset path')
     parser.add_argument('--batch-size', type=int, default=128, help='batch size')
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=224, help='inference size (pixels)')
-    parser.add_argument('--fullresize', action='store_true',help='Stretching images without maintaining aspect ratio')  # 不保持宽高比拉伸图像
+    parser.add_argument('--fullresize', action='store_true',
+                        help='Stretching images without maintaining aspect ratio')  # 不保持宽高比拉伸图像
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--workers', type=int, default=8, help='max dataloader workers (per RANK in DDP mode)')
     parser.add_argument('--verbose', nargs='?', const=True, default=True, help='verbose output')
@@ -164,7 +167,7 @@ def parse_opt():
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
     opt = parser.parse_args()
-    #print_args(vars(opt))
+    # print_args(vars(opt))
     return opt
 
 
