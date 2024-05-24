@@ -100,8 +100,8 @@ def train(opt, device):
                                                           fullresize=False)
 
     # Model
-    if Path(opt.weight).is_file() or opt.weight.endswith('.pt'):
-        model = attempt_load(opt.weight, map_location=device)
+    if Path(opt.weights).is_file() or opt.weights.endswith('.pt'):
+        model = attempt_load(opt.weights, map_location=device)
     else:
         model = Model(opt.cfg, ch=3, nc=nc).to(device)  # create
         # model = ClassificationModel(model=model, nc=nc, cutoff=opt.cutoff or 10)  # convert to classification model
@@ -156,7 +156,7 @@ def train(opt, device):
     print(f'Image sizes {imgsz} train, {imgsz} test\n'
           f'Using {nw * WORLD_SIZE} dataloader workers\n'
           f"Logging results to {colorstr('bold', save_dir)}\n"
-          f'Starting {opt.weight} training on {data} dataset with {nc} classes for {epochs} epochs...\n\n'
+          f'Starting {opt.weights} training on {data} dataset with {nc} classes for {epochs} epochs...\n\n'
           f"{'Epoch':>10}{'GPU_mem':>10}{'train_loss':>12}{f'{val}_loss':>12}{'top1_acc':>12}{'top5_acc':>12}")
     for epoch in range(epochs):  # loop over the dataset multiple times
         tloss, vloss, fitness = 0.0, 0.0, 0.0  # train loss, val loss, fitness
@@ -254,7 +254,7 @@ def train(opt, device):
 
 def parse_opt(known=False):
     parser = argparse.ArgumentParser()
-    parser.add_argument('--weight', type=str, default=r'', help='initial weights path')
+    parser.add_argument('--weights', type=str, default=r'', help='initial weights path')
     parser.add_argument('--cfg', type=str, default='',
                         help='model.yaml path')
     parser.add_argument('--data', type=str, default='', help='path of dataset fold.')
